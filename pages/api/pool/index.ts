@@ -1,3 +1,4 @@
+// @/pages/api/pool/index.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import jwt from "jsonwebtoken";
 import mongoConnect from "@/lib/mongoConnect";
@@ -60,7 +61,6 @@ export default async function handler(
         return res.status(201).json({ success: true, data: pool });
       }
 
-      // 🔵 READ ALL (pool milik user)
       case "GET": {
         const pools = await Pool.find({ userId }).sort({ createdAt: -1 });
         return res.status(200).json({ success: true, data: pools });

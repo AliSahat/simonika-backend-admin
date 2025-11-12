@@ -1,3 +1,4 @@
+// @/pages/api/mqtt/index.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import mqtt from "mqtt";
 import mongoose from "mongoose";
@@ -10,7 +11,6 @@ const MQTT_PASSWORD = "Classmild1";
 
 const TOPIC = "devices/00e5b570/data";
 
-// CONNECT MONGODB
 async function connectDB() {
   if (mongoose.connection.readyState >= 1) return;
   await mongoose.connect(process.env.MONGODB_URI as string);
@@ -19,7 +19,6 @@ async function connectDB() {
 let latestData: any = null;
 let client: mqtt.MqttClient | null = null;
 
-// MQTT CONNECT FUNCTION
 function connectMqtt() {
   if (client) return client;
 
@@ -48,7 +47,6 @@ function connectMqtt() {
 
       console.log("📥 MQTT Data Received:", latestData);
 
-      // --- SAVE to MONGODB ---
       try {
         await connectDB();
 
@@ -73,7 +71,6 @@ function connectMqtt() {
   return client;
 }
 
-// --- API ENDPOINT ---
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,

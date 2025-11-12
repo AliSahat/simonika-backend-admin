@@ -1,3 +1,4 @@
+// @/pages/api/pool/[id]/index.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import jwt from "jsonwebtoken";
 import mongoConnect from "@/lib/mongoConnect";

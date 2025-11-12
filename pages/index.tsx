@@ -4,7 +4,7 @@ import { Lock, User, Eye, EyeOff, AlertCircle } from "lucide-react";
 
 interface LoginResponse {
   message: string;
-  token: string; // Make token required since API always returns it
+  token: string;
   user: {
     id: string;
     name: string;
