@@ -7,7 +7,28 @@ import verifyCors, { cors } from '@/middleware/verifyCors';
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+interface ApiResponse {
+  message: string;
+  token?: string;
+  user?: {
+    id: string;
+    name: string;
+    username: string;
+    createdAt: Date;
+    updatedAt: Date;
+  };
+}
+
+interface ApiRequest extends NextApiRequest {
+  body: LoginRequest;
+}
+
+export default async function handler(req: ApiRequest, res: NextApiResponse<ApiResponse>) {
   await verifyCors(req, res, cors);
 
   if (req.method === 'OPTIONS') {
@@ -27,6 +48,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ message: 'Username dan password harus diisi' });
     }
 
+    if (typeof username !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ message: 'Format data tidak valid' });
+    }
+
     const user = await User.findOne({ username: username.trim().toLowerCase() }).select('+password');
 
     if (!user) {
@@ -37,6 +62,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!isPasswordValid) {
       return res.status(401).json({ message: 'Username atau password salah' });
+    }
+
+    if (!JWT_SECRET) {
+      return res.status(500).json({ message: 'JWT Secret tidak ditemukan' });
     }
 
     const token = jwt.sign(
@@ -50,7 +79,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     );
 
     const userResponse = {
-      id: user._id,
+      id: String(user._id),
       name: user.name,
       username: user.username,
       createdAt: user.createdAt,
@@ -62,7 +91,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       token,
       user: userResponse,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Terjadi kesalahan server' });
   }
