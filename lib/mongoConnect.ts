@@ -22,7 +22,7 @@ const mongoConnect = async (): Promise<void> => {
     console.log('MongoDB Connected');
   } catch (error: unknown) {
     console.error('MongoDB Connection Error:', error);
-    process.exit(1);
+    throw error;
   }
 };
 
