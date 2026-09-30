@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '@/components/Sidebar';
 import { Icon } from '@iconify/react';
 
 const UpdatePoolPage = () => {
-  const { id } = useParams();
   const router = useRouter();
+  const { id } = router.query;
 
   const [form, setForm] = useState({
     serial: '',
@@ -24,6 +24,8 @@ const UpdatePoolPage = () => {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (!id) return;
+
     const fetchData = async () => {
       try {
         const token = localStorage.getItem('token');
