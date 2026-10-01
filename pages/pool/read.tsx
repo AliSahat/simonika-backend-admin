@@ -3,217 +3,87 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import Sidebar from '@/components/Sidebar';
+import WaterWaves from '@/components/WaterWaves';
 import Link from 'next/link';
-import Loading from '@/components/Loading';
-import Empty from '@/components/Empty';
-import { Icon } from '@iconify/react';
+import { Waves, Plus, Search, ArrowRight, Droplet, CircleCheck, CirclePause, RefreshCw, AlertCircle, Pencil, Trash2, Ruler, Clock, X, House, ChevronDown, User } from 'lucide-react';
 
-const ReadPoolPage = () => {
-  const [pools, setPools] = useState([]);
+interface PoolData {
+  _id: string;
+  namaWadah: string;
+  serial: string;
+  kedalaman: number;
+  keranTutup: number;
+  keranNormal: number;
+  keranBuka: number;
+  isActive?: boolean;
+  updatedAt?: string;
+}
+
+export default function ReadPoolPage() {
+  const [pools, setPools] = useState<PoolData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('all');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [notice, setNotice] = useState('');
 
   const fetchPools = async () => {
+    setLoading(true);
+    setError('');
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get('/api/pool', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
+      const res = await axios.get('/api/pool', { headers: { Authorization: `Bearer ${token}` } });
       setPools(res.data.data);
-    } catch (error) {
-      console.error('Error fetching pools:', error);
+    } catch {
+      setError('Data wadah belum berhasil dimuat. Silakan coba lagi.');
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchPools();
-  }, []);
+  useEffect(() => { void fetchPools(); }, []);
 
   const handleDelete = async (id: string) => {
-    const confirmDelete = confirm('Yakin ingin menghapus kolam ini?');
-    if (!confirmDelete) return;
-
+    if (!confirm('Yakin ingin menghapus wadah ini?')) return;
+    setDeletingId(id);
+    setNotice('');
     try {
       const token = localStorage.getItem('token');
-
-      await axios.delete(`/api/pool/${id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      alert('Kolam berhasil dihapus!');
-      fetchPools();
-    } catch (error) {
-      console.error('Error deleting pool:', error);
-      alert('Gagal menghapus kolam!');
-    }
+      await axios.delete(`/api/pool/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      setPools(previous => previous.filter(pool => pool._id !== id));
+      setNotice('Wadah berhasil dihapus.');
+    } catch {
+      setNotice('Gagal menghapus wadah. Silakan coba lagi.');
+    } finally { setDeletingId(null); }
   };
+  const activeCount = pools.filter(pool => pool.isActive).length;
+  const visiblePools = pools.filter(pool =>
+    `${pool.namaWadah} ${pool.serial || ''}`.toLowerCase().includes(query.trim().toLowerCase()) &&
+    (status === 'all' || (status === 'active' ? pool.isActive : !pool.isActive))
+  );
+  const addButton = <Link href="/pool/create" className="dash-button dash-button-primary"><Plus size={18} aria-hidden="true" />Tambah wadah</Link>;
 
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-cyan-50 min-h-screen">
-      <Sidebar />
-      <div className="pl-[150px] pt-8 px-8 pb-8">
-        {/* Header Section */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <Icon icon="mdi:water-outline" className="text-blue-600" width="36" />
-                <h1 className="text-4xl font-bold text-gray-800">Manajemen Wadah</h1>
-              </div>
-              <p className="text-gray-600 ml-12">Kelola dan monitor semua wadah air Anda</p>
-            </div>
-
-            <Link
-              href="/pool/create"
-              className="group flex items-center gap-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-semibold"
-            >
-              <Icon icon="mdi:plus-circle" width="24" />
-              <span>Tambah Wadah Baru</span>
-            </Link>
-          </div>
-
-          {/* Stats Bar */}
-          {!loading && pools.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white rounded-xl p-4 shadow-md border border-blue-100">
-                <div className="flex items-center gap-3">
-                  <div className="bg-blue-100 p-3 rounded-lg">
-                    <Icon icon="mdi:water" className="text-blue-600" width="28" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Total Wadah</p>
-                    <p className="text-2xl font-bold text-gray-800">{pools.length}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl p-4 shadow-md border border-green-100">
-                <div className="flex items-center gap-3">
-                  <div className="bg-green-100 p-3 rounded-lg">
-                    <Icon icon="mdi:check-circle" className="text-green-600" width="28" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Wadah Aktif</p>
-                    <p className="text-2xl font-bold text-gray-800">{pools.filter((p: any) => p.isActive).length}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl p-4 shadow-md border border-red-100">
-                <div className="flex items-center gap-3">
-                  <div className="bg-red-100 p-3 rounded-lg">
-                    <Icon icon="mdi:close-circle" className="text-red-600" width="28" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Wadah Tidak Aktif</p>
-                    <p className="text-2xl font-bold text-gray-800">{pools.filter((p: any) => !p.isActive).length}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Content */}
-        {loading ? (
-          <Loading />
-        ) : pools.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-lg p-12">
-            <Empty messages="Tidak ada data wadah" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {pools.map((pool: any) => (
-              <div key={pool._id} className="group bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border border-gray-100">
-                {/* Card Header */}
-                <div className="bg-gradient-to-r from-blue-500 to-cyan-500 p-5 text-white relative overflow-hidden">
-                  <div className="absolute top-0 right-0 opacity-10">
-                    <Icon icon="mdi:water-outline" width="120" />
-                  </div>
-                  <div className="relative z-10">
-                    <div className="flex items-start justify-between mb-2">
-                      <h2 className="text-2xl font-bold">{pool.namaWadah}</h2>
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${pool.isActive ? 'bg-green-400 text-green-900' : 'bg-red-400 text-red-900'}`}>{pool.isActive ? 'Aktif' : 'Nonaktif'}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm opacity-90">
-                      <Icon icon="mdi:barcode-scan" width="16" />
-                      <span>Serial: {pool.serial}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Body */}
-                <div className="p-5">
-                  <div className="space-y-3 mb-5">
-                    <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-                      <Icon icon="mdi:arrow-expand-vertical" className="text-blue-600" width="24" />
-                      <div>
-                        <p className="text-xs text-gray-600">Kedalaman Wadah</p>
-                        <p className="font-bold text-gray-800">{pool.kedalaman} cm</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className="bg-gray-50 p-2 rounded-lg">
-                        <p className="text-xs text-gray-600 mb-1">Tutup</p>
-                        <p className="font-semibold text-gray-700 text-sm">{pool.keranTutup}</p>
-                      </div>
-                      <div className="bg-yellow-50 p-2 rounded-lg">
-                        <p className="text-xs text-gray-600 mb-1">Normal</p>
-                        <p className="font-semibold text-yellow-700 text-sm">{pool.keranNormal}</p>
-                      </div>
-                      <div className="bg-green-50 p-2 rounded-lg">
-                        <p className="text-xs text-gray-600 mb-1">Buka</p>
-                        <p className="font-semibold text-green-700 text-sm">{pool.keranBuka}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="space-y-2">
-                    <Link
-                      href={`/pool/${pool._id}/detail`}
-                      className="group/btn flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white py-3 rounded-xl font-semibold transition-all duration-300 shadow-md hover:shadow-lg"
-                    >
-                      <Icon icon="mdi:monitor-dashboard" width="20" />
-                      <span>Monitoring Wadah</span>
-                      <Icon icon="mdi:arrow-right" width="20" className="group-hover/btn:translate-x-1 transition-transform" />
-                    </Link>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <Link href={`/pool/${pool._id}/update`} className="flex items-center justify-center gap-2 border-2 border-blue-500 text-blue-600 hover:bg-blue-50 py-2.5 rounded-xl font-semibold transition-all duration-300">
-                        <Icon icon="mdi:pencil" width="18" />
-                        <span>Ubah</span>
-                      </Link>
-
-                      <button onClick={() => handleDelete(pool._id)} className="flex items-center justify-center gap-2 border-2 border-red-300 text-red-600 hover:bg-red-50 py-2.5 rounded-xl font-semibold transition-all duration-300">
-                        <Icon icon="mdi:delete" width="18" />
-                        <span>Hapus</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Footer */}
-                <div className="px-5 pb-4 pt-2 border-t border-gray-100">
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <Icon icon="mdi:clock-outline" width="14" />
-                    <span>Update: {new Date(pool.updatedAt).toLocaleDateString('id-ID')}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+    <div className="dashboard-page">
+      <Sidebar expanded />
+      <main className="dashboard-main">
+        <WaterWaves className="dashboard-header-waves" />
+        <div className="dashboard-topline"><span className="dashboard-breadcrumb"><House size={15} aria-hidden="true" />Workspace / <strong>Manajemen wadah</strong></span><div className="dashboard-top-actions"><span className="dashboard-context"><span className="dashboard-context-dot" /> Monitoring air</span><Link href="/profile" className="dashboard-account" aria-label="Buka profil"><User size={18} aria-hidden="true" /><ChevronDown size={14} aria-hidden="true" /></Link></div></div>
+        <header className="dashboard-header">
+          <div><p className="dashboard-eyebrow">KELOLA DENGAN MUDAH</p><h1>Manajemen wadah</h1><p>Semua wadah air Anda, terpantau dalam satu tempat.</p></div>
+          {addButton}
+        </header>
+        <section className="dashboard-stats" aria-label="Ringkasan wadah">
+          {[{ label: 'Total wadah', value: pools.length, icon: Waves, tone: 'blue', hint: 'Wadah terdaftar' }, { label: 'Wadah aktif', value: activeCount, icon: CircleCheck, tone: 'green', hint: 'Status aktif' }, { label: 'Wadah nonaktif', value: pools.length - activeCount, icon: CirclePause, tone: 'slate', hint: 'Status nonaktif' }].map(stat => <div className={`dashboard-stat dashboard-stat-${stat.tone}`} key={stat.label}><span className={`dashboard-stat-icon ${stat.tone}`}><stat.icon size={25} aria-hidden="true" /></span><div><p>{stat.label}</p><strong>{loading || error ? '—' : stat.value}</strong><span>{stat.hint}</span></div><span className="dashboard-stat-chevron" aria-hidden="true"><ArrowRight size={14} /></span></div>)}
+        </section>
+        <section className="dashboard-collection" aria-labelledby="collection-title" aria-busy={loading}>
+          <div className="dashboard-collection-header"><div><h2 id="collection-title">Daftar wadah <span>{loading || error ? '—' : pools.length}</span></h2><p>Kelola konfigurasi dan buka monitoring wadah Anda.</p></div><button className="dash-button dash-button-secondary" onClick={fetchPools} disabled={loading}><RefreshCw size={16} aria-hidden="true" />{loading ? 'Memuat...' : 'Perbarui'}</button></div>
+          <div className="dashboard-tools"><div className="dashboard-search"><Search size={18} aria-hidden="true" /><input aria-label="Cari wadah berdasarkan nama atau serial" placeholder="Cari nama atau serial wadah..." value={query} onChange={e => setQuery(e.target.value)} />{query && <button aria-label="Hapus pencarian" onClick={() => setQuery('')}><X size={16} /></button>}</div><div className="dashboard-filters" role="group" aria-label="Filter status wadah">{[['all', 'Semua'], ['active', 'Aktif'], ['inactive', 'Nonaktif']].map(([value, label]) => <button key={value} aria-pressed={status === value} className={status === value ? 'selected' : ''} onClick={() => setStatus(value)}>{label}</button>)}</div></div>
+          {notice && <p className="dashboard-notice" role="status">{notice}</p>}
+          {loading ? <div className="dashboard-skeletons" role="status" aria-label="Memuat daftar wadah">{[1, 2, 3].map(i => <div className="dashboard-skeleton" key={i}><span /><span /><span /></div>)}</div> : error ? <div className="dashboard-empty" role="alert"><span className="dashboard-empty-icon"><AlertCircle size={34} /></span><h3>Belum dapat memuat wadah</h3><p>{error}</p><button className="dash-button dash-button-primary" onClick={fetchPools}><RefreshCw size={17} />Coba lagi</button></div> : pools.length === 0 ? <div className="dashboard-empty"><div className="dashboard-empty-art" aria-hidden="true"><span className="dashboard-empty-pool" /><span className="dashboard-empty-bubble bubble-one" /><span className="dashboard-empty-bubble bubble-two" /><span className="dashboard-empty-bubble bubble-three" /><span className="dashboard-empty-ring" /><span className="dashboard-empty-icon"><Waves size={40} /></span><span className="dashboard-empty-drop"><Droplet size={20} /></span></div><h3>Siap memantau air Anda?</h3><p>Belum ada wadah yang terdaftar. Tambahkan wadah pertama<br className="dashboard-desktop-break" /> untuk mulai mengelola dan memantau ketinggian air.</p>{addButton}<span className="dashboard-empty-caption">Atur nama, serial perangkat, dan kedalaman wadah.</span></div> : visiblePools.length === 0 ? <div className="dashboard-empty"><span className="dashboard-empty-icon"><Search size={32} /></span><h3>Wadah tidak ditemukan</h3><p>Coba kata kunci lain atau ubah filter status.</p><button className="dash-button dash-button-secondary" onClick={() => { setQuery(''); setStatus('all'); }}>Reset pencarian</button></div> : <div className="dashboard-pool-grid">{visiblePools.map(pool => <article className="dashboard-pool-card" key={pool._id}><div className="dashboard-pool-heading"><span className="dashboard-stat-icon blue"><Waves size={23} aria-hidden="true" /></span><span className={`dashboard-badge ${pool.isActive ? 'active' : ''}`}><span />{pool.isActive ? 'Aktif' : 'Nonaktif'}</span></div><h3>{pool.namaWadah}</h3><p className="dashboard-serial">Serial: {pool.serial || 'Belum diatur'}</p><div className="dashboard-depth"><Ruler size={18} aria-hidden="true" /><span>Kedalaman wadah</span><strong>{pool.kedalaman} <small>cm</small></strong></div><div className="dashboard-valves">{[['Tutup', pool.keranTutup], ['Normal', pool.keranNormal], ['Buka', pool.keranBuka]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><Link className="dash-button dash-button-monitor" href={`/pool/${pool._id}/detail`}>Buka monitoring<ArrowRight size={17} aria-hidden="true" /></Link><div className="dashboard-card-footer"><span><Clock size={13} aria-hidden="true" />{pool.updatedAt ? new Date(pool.updatedAt).toLocaleDateString('id-ID') : 'Belum diperbarui'}</span><div><Link href={`/pool/${pool._id}/update`} aria-label={`Ubah ${pool.namaWadah}`}><Pencil size={17} /></Link><button onClick={() => handleDelete(pool._id)} disabled={deletingId !== null} aria-label={`Hapus ${pool.namaWadah}`}><Trash2 size={17} /></button></div></div></article>)}</div>}
+        </section>
+        <footer className="dashboard-footer"><Waves size={15} aria-hidden="true" /> SIMONIKA <span>Monitoring air yang lebih sederhana.</span></footer>
+      </main>
     </div>
   );
-};
-
-export default ReadPoolPage;
+}

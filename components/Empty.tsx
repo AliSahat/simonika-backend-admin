@@ -1,18 +1,5 @@
-import Sidebar from "@/components/Sidebar";
+import { Waves } from 'lucide-react';
 
-type EmptyProps = {
-  messages: string;
-};
-
-const Empty = ({ messages }: EmptyProps) => {
-  return (
-    <div>
-      <Sidebar />
-      <div className="pl-[150px] pt-5 min-h-screen flex justify-center items-center">
-        <p>{messages}</p>
-      </div>
-    </div>
-  );
-};
-
-export default Empty;
+export default function Empty({ messages }: { messages: string }) {
+  return <div className="dashboard-empty"><span className="dashboard-empty-icon"><Waves size={32} aria-hidden="true" /></span><p>{messages}</p></div>;
+}

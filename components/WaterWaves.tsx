@@ -1,0 +1,3 @@
+export default function WaterWaves({ className }: { className?: string }) {
+  return <svg className={className} viewBox="0 0 600 240" fill="none" preserveAspectRatio="none" aria-hidden="true"><path d="M0 180C90 100 130 260 240 166S340 58 410 120 525 125 600 60V240H0Z" fill="#dff4ff" /><path d="M0 212C90 140 154 225 246 195S375 89 454 139 546 160 600 115V240H0Z" fill="#cceeff" fillOpacity=".7" /><path d="M0 230C130 185 174 250 280 219S440 150 600 195V240H0Z" fill="#eff9ff" /><path d="M0 213C90 141 154 226 246 196S375 90 454 140 546 161 600 116" stroke="white" strokeOpacity=".8" strokeWidth="2" /></svg>;
+}

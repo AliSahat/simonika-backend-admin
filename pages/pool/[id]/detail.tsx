@@ -1,250 +1,99 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 import axios from 'axios';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import Sidebar from '@/components/Sidebar';
-import { Icon } from '@iconify/react';
+import WaterWaves from '@/components/WaterWaves';
+import { ArrowLeft, ArrowRight, House, Waves, Droplet, Ruler, Clock, Pencil, RefreshCw, Pause, Play, Radio, SlidersHorizontal, Info, CircleCheck, CirclePause, Table2 } from 'lucide-react';
 
-const DetailPoolPage = () => {
+interface PoolData { _id: string; namaWadah: string; serial: string; kedalaman: number; keranTutup: number; keranNormal: number; keranBuka: number; isActive: boolean; createdAt?: string; updatedAt?: string; }
+interface Reading { _id: string; serial: string; waterLevel: number; distance: number; createdAt: string; }
+const formatDate = (value?: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+const formatTime = (value: number) => new Date(value).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const formatValue = (value?: number) => typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('id-ID', { maximumFractionDigits: 1 }) : '—';
+
+export default function DetailPoolPage() {
   const router = useRouter();
   const { id } = router.query;
-
-  const [data, setData] = useState<any>(null);
-  const [latestWater, setLatestWater] = useState<any>(null);
+  const gradientId = useId().replace(/:/g, '');
+  const [data, setData] = useState<PoolData | null>(null);
+  const [readings, setReadings] = useState<Reading[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [waterError, setWaterError] = useState('');
+  const [waterLoading, setWaterLoading] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [retry, setRetry] = useState(0);
+  const [refresh, setRefresh] = useState(0);
+  const [showTable, setShowTable] = useState(false);
 
-  // 🔹 Fetch Detail Kolam (sekali saja)
   useEffect(() => {
-    if (!id) return;
-
-    const fetchDetail = async () => {
+    if (!router.isReady || typeof id !== 'string') return;
+    const controller = new AbortController();
+    setLoading(true);
+    setLoadError('');
+    setData(null);
+    setReadings([]);
+    const load = async () => {
       try {
         const token = localStorage.getItem('token');
-
-        const resPool = await axios.get(`/api/pool/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        setData(resPool.data.data);
+        const response = await axios.get(`/api/pool/${id}`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
+        setData(response.data.data);
       } catch (error) {
-        console.error('Error fetching detail:', error);
-        alert('Gagal mengambil data detail!');
+        if (!controller.signal.aborted) setLoadError(axios.isAxiosError(error) && typeof error.response?.data?.message === 'string' ? error.response.data.message : 'Detail wadah belum berhasil dimuat. Silakan coba lagi.');
+      } finally { if (!controller.signal.aborted) setLoading(false); }
+    };
+    void load();
+    return () => controller.abort();
+  }, [router.isReady, id, retry]);
+
+  useEffect(() => {
+    if (!data?.serial) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const loadWater = async () => {
+      setWaterLoading(true);
+      try {
+        const response = await axios.get('/api/water/level', { params: { serial: data.serial, limit: 50 }, signal: controller.signal });
+        const items = (response.data.data as Reading[]).filter(item => item.serial === data.serial && Number.isFinite(Date.parse(item.createdAt))).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+        setReadings(items);
+        setWaterError('');
+      } catch {
+        if (!controller.signal.aborted) setWaterError('Pembaruan sensor gagal. Data terakhir tetap ditampilkan; coba perbarui lagi.');
       } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDetail();
-  }, [id]);
-
-  // 🔁 Auto Refresh Water Level setiap 1 detik
-  useEffect(() => {
-    if (!data) return;
-
-    const fetchLatestWater = async () => {
-      try {
-        const token = localStorage.getItem('token');
-
-        const res = await axios.get(`/api/water/level`);
-
-        const allLevels = res.data.data;
-
-        const filtered = allLevels.filter((item: any) => item.serial === data.serial).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-        if (filtered.length > 0) {
-          setLatestWater(filtered[0]);
+        if (!controller.signal.aborted) {
+          setWaterLoading(false);
+          if (autoRefresh) timer = setTimeout(loadWater, 1000);
         }
-      } catch (error) {
-        console.error('Error fetching latest water:', error);
       }
     };
+    void loadWater();
+    return () => { controller.abort(); if (timer) clearTimeout(timer); };
+  }, [data?.serial, autoRefresh, refresh]);
 
-    fetchLatestWater();
-    const interval = setInterval(fetchLatestWater, 1000);
-    return () => clearInterval(interval);
-  }, [data]);
+  const latest = readings[0];
+  const hasLevel = !!latest && Number.isFinite(latest.waterLevel);
+  const percent = hasLevel ? Math.min(100, Math.max(0, latest.waterLevel)) : 0;
+  const valve = !latest || !data || !Number.isFinite(latest.distance) ? { label: 'Menunggu data', tone: 'slate' } : latest.distance === data.keranTutup ? { label: 'Keran tertutup', tone: 'slate' } : latest.distance === data.keranNormal ? { label: 'Keran normal', tone: 'blue' } : latest.distance === data.keranBuka ? { label: 'Keran terbuka', tone: 'green' } : { label: 'Belum cocok dengan konfigurasi', tone: 'slate' };
+  const chartData = [...readings].reverse().filter(item => Number.isFinite(item.waterLevel)).map(item => ({ timestamp: Date.parse(item.createdAt), level: item.waterLevel }));
 
-  const getStatusColor = () => {
-    if (!latestWater || !data) return 'bg-gray-400';
-
-    if (latestWater.distance == data.keranTutup) return 'bg-gray-400';
-    if (latestWater.distance == data.keranNormal) return 'bg-yellow-500';
-    if (latestWater.distance == data.keranBuka) return 'bg-green-500';
-    return 'bg-red-500';
-  };
-
-  const getStatusText = () => {
-    if (!latestWater || !data) return 'Unknown';
-
-    if (latestWater.distance == data.keranTutup) return 'Keran Tutup';
-    if (latestWater.distance == data.keranNormal) return 'Keran Normal';
-    if (latestWater.distance == data.keranBuka) return 'Keran Buka';
-    return 'Status Tidak Diketahui';
-  };
-
-  return (
-    <div className="bg-gradient-to-br from-blue-50 to-cyan-50 min-h-screen">
-      <Sidebar />
-      <div className="pl-[150px] pt-8 px-8 pb-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <Icon icon="mdi:water-outline" className="text-blue-600" width="32" />
-            <h1 className="text-3xl font-bold text-gray-800">Monitoring Wadah</h1>
-          </div>
-          <p className="text-gray-600">Real-time monitoring sistem ketinggian air</p>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <Icon icon="mdi:loading" className="animate-spin text-blue-600 mx-auto mb-3" width="48" />
-              <p className="text-gray-600">Memuat data...</p>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            {/* Detail Kolam Card */}
-            {data && (
-              <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    <Icon icon="mdi:information-outline" className="text-blue-600" width="24" />
-                    Informasi Wadah
-                  </h2>
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${data.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{data.isActive ? 'Aktif' : 'Tidak Aktif'}</span>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-                    <Icon icon="mdi:barcode" className="text-blue-600" width="24" />
-                    <div>
-                      <p className="text-xs text-gray-600">Serial Number</p>
-                      <p className="font-semibold text-gray-800">{data.serial}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 bg-cyan-50 rounded-lg">
-                    <Icon icon="mdi:water" className="text-cyan-600" width="24" />
-                    <div>
-                      <p className="text-xs text-gray-600">Nama Wadah</p>
-                      <p className="font-semibold text-gray-800">{data.namaWadah}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 bg-purple-50 rounded-lg">
-                      <p className="text-xs text-gray-600 mb-1">Kedalaman</p>
-                      <p className="font-bold text-purple-700">{data.kedalaman} cm</p>
-                    </div>
-                    <div className="p-3 bg-indigo-50 rounded-lg">
-                      <p className="text-xs text-gray-600 mb-1">Keran Tutup</p>
-                      <p className="font-bold text-indigo-700">{data.keranTutup} cm</p>
-                    </div>
-                    <div className="p-3 bg-yellow-50 rounded-lg">
-                      <p className="text-xs text-gray-600 mb-1">Keran Normal</p>
-                      <p className="font-bold text-yellow-700">{data.keranNormal} cm</p>
-                    </div>
-                    <div className="p-3 bg-green-50 rounded-lg">
-                      <p className="text-xs text-gray-600 mb-1">Keran Buka</p>
-                      <p className="font-bold text-green-700">{data.keranBuka} cm</p>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-gray-200">
-                    <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-                      <Icon icon="mdi:calendar-plus" width="16" />
-                      <span>Dibuat: {new Date(data.createdAt).toLocaleString('id-ID')}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Icon icon="mdi:calendar-edit" width="16" />
-                      <span>Diupdate: {new Date(data.updatedAt).toLocaleString('id-ID')}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Water Level Card */}
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                  <Icon icon="mdi:waves" className="text-cyan-600" width="24" />
-                  Water Level Realtime
-                </h2>
-                <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                  Auto Refresh
-                </div>
-              </div>
-
-              {!latestWater ? (
-                <div className="text-center py-12">
-                  <Icon icon="mdi:water-off-outline" className="text-gray-300 mx-auto mb-3" width="64" />
-                  <p className="text-gray-500">Belum ada data water level</p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Water Level Percentage */}
-                  <div className="relative">
-                    <div className="flex items-end justify-center mb-3">
-                      <span className="text-6xl font-bold text-blue-600">{latestWater.waterLevel}</span>
-                      <span className="text-3xl font-semibold text-blue-400 mb-2">%</span>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
-                      <div className={`h-full ${getStatusColor()} transition-all duration-500 rounded-full`} style={{ width: `${latestWater.waterLevel}%` }}></div>
-                    </div>
-                  </div>
-
-                  {/* Distance */}
-                  <div className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl p-4 text-white">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm opacity-90 mb-1">Jarak Sensor</p>
-                        <p className="text-3xl font-bold">{latestWater.distance}</p>
-                        <p className="text-sm opacity-90 mt-1">centimeter</p>
-                      </div>
-                      <Icon icon="mdi:ruler" width="48" className="opacity-50" />
-                    </div>
-                  </div>
-
-                  {/* Status Toggle */}
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-600 mb-1">Status Keran</p>
-                        <p className="text-lg font-bold text-gray-800">{getStatusText()}</p>
-                      </div>
-                      <div>
-                        {latestWater.distance == data.keranTutup ? (
-                          <Icon icon="mdi:toggle-switch-off" width="64" className="text-gray-400" />
-                        ) : latestWater.distance == data.keranNormal ? (
-                          <Icon icon="mdi:toggle-switch-off-outline" width="64" className="text-yellow-500" />
-                        ) : latestWater.distance == data.keranBuka ? (
-                          <Icon icon="mdi:toggle-switch" width="64" className="text-green-500" />
-                        ) : (
-                          <Icon icon="mdi:help-circle" width="52" className="text-red-500" />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Timestamp */}
-                  <div className="flex items-center gap-2 text-sm text-gray-600 pt-2 border-t border-gray-200">
-                    <Icon icon="mdi:clock-outline" width="16" />
-                    <span>Terakhir update: {new Date(latestWater.createdAt).toLocaleString('id-ID')}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-export default DetailPoolPage;
+  return <div className="dashboard-page detail-page"><Sidebar expanded /><main className="dashboard-main"><WaterWaves className="dashboard-header-waves" />
+    <div className="dashboard-topline"><span className="dashboard-breadcrumb"><House size={15} aria-hidden="true" /><Link href="/pool/read">Workspace</Link><span>/</span><strong>Monitoring wadah</strong></span><span className="dashboard-context"><Radio size={14} aria-hidden="true" />Data sensor</span></div>
+    <Link href="/pool/read" className="create-back"><ArrowLeft size={16} aria-hidden="true" />Kembali ke daftar wadah</Link>
+    <header className="dashboard-header create-header"><div><p className="dashboard-eyebrow">KENALI AIR ANDA LEBIH DEKAT</p><h1>{data?.namaWadah || 'Monitoring wadah'}</h1><p>Pantau ketinggian air dan lihat riwayat pembacaan sensor.</p></div>{data && <Link href={`/pool/${data._id}/update`} className="dash-button dash-button-secondary"><Pencil size={16} aria-hidden="true" />Edit wadah</Link>}</header>
+    {loading ? <div className="update-load-state" role="status"><span className="login-spinner" aria-hidden="true" /><h2>Memuat monitoring wadah</h2><p>Menyiapkan informasi dan konfigurasi perangkat...</p></div> : loadError || !data ? <div className="update-load-state" role="alert"><Info size={30} aria-hidden="true" /><h2>Belum dapat membuka wadah</h2><p>{loadError || 'Data wadah tidak tersedia.'}</p><button className="dash-button dash-button-primary" onClick={() => setRetry(value => value + 1)}><RefreshCw size={16} aria-hidden="true" />Coba lagi</button></div> : <>
+      <div className="detail-device-bar"><div><span className={`dashboard-badge ${data.isActive ? 'active' : ''}`}><span />{data.isActive ? 'Wadah aktif' : 'Wadah nonaktif'}</span><span className="detail-device-serial"><Radio size={15} aria-hidden="true" />{data.serial || 'Serial belum diatur'}</span></div><div><button className="dash-button dash-button-secondary" aria-pressed={autoRefresh} onClick={() => setAutoRefresh(value => !value)}>{autoRefresh ? <Pause size={15} /> : <Play size={15} />}{autoRefresh ? 'Jeda pembaruan' : 'Lanjutkan otomatis'}</button><button className="dash-button dash-button-secondary" disabled={waterLoading || !data.serial} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={15} aria-hidden="true" />Perbarui</button></div></div>
+      {waterError && <div className="detail-alert" role="alert"><Info size={18} aria-hidden="true" /><p>{waterError}</p></div>}
+      {!data.serial && <div className="detail-alert" role="status"><Info size={18} aria-hidden="true" /><p>Serial perangkat belum diatur. Edit wadah untuk menghubungkan data sensor.</p></div>}
+      <div className="detail-overview"><section className="detail-water-card" aria-labelledby="water-heading"><div className="detail-card-heading"><h2 id="water-heading"><Droplet size={19} aria-hidden="true" />Level air</h2><span className="detail-auto-label"><span className={autoRefresh && !waterError ? 'enabled' : ''} />{waterError ? 'Pembaruan gagal' : autoRefresh ? 'Pembaruan otomatis' : 'Pembaruan dijeda'}</span></div><div className="detail-water-body"><div><span className="detail-water-value">{hasLevel ? formatValue(latest.waterLevel) : '—'}<small>%</small></span><p>{hasLevel ? 'Persentase dari sensor perangkat' : waterLoading ? 'Memuat pembacaan sensor...' : 'Belum ada pembacaan sensor'}</p><div className="detail-water-track" role="progressbar" aria-label="Persentase air pada visual wadah" aria-valuemin={0} aria-valuemax={100} aria-valuenow={hasLevel ? percent : undefined} aria-valuetext={hasLevel ? `${formatValue(latest.waterLevel)} persen` : 'Belum ada data'}><span style={{ width: `${percent}%` }} /></div><div className="detail-water-scale"><span>0%</span><span>100%</span></div></div><div className="detail-tank" aria-hidden="true"><div className="detail-tank-fill" style={{ height: `${percent}%` }}><WaterWaves className="detail-tank-waves" /></div><Waves size={34} /></div></div><div className="detail-water-timestamp"><Clock size={14} aria-hidden="true" /><span>Pembacaan terakhir: {formatDate(latest?.createdAt)}</span></div></section>
+      <div className="detail-metric-stack"><section className="detail-metric"><span className="dashboard-stat-icon blue"><Ruler size={23} aria-hidden="true" /></span><div><p>Jarak sensor ke air</p><strong>{formatValue(latest?.distance)} <small>cm</small></strong><span>Pembacaan sensor ultrasonik</span></div></section><section className="detail-metric"><span className={`dashboard-stat-icon ${valve.tone}`}><SlidersHorizontal size={23} aria-hidden="true" /></span><div><p>Indikasi posisi keran</p><h3>{valve.label}</h3><span>Berdasarkan kecocokan jarak konfigurasi</span></div></section></div></div>
+      <div className="detail-lower-grid"><section className="detail-chart-card" aria-labelledby="chart-heading"><div className="detail-card-heading"><div><h2 id="chart-heading">Riwayat level air</h2><p>Maksimal 50 pembacaan terakhir dari perangkat ini.</p></div><button className="dash-button dash-button-secondary" onClick={() => setShowTable(value => !value)} aria-pressed={showTable}><Table2 size={15} aria-hidden="true" />{showTable ? 'Lihat grafik' : 'Lihat data'}</button></div>
+      {showTable ? <div className="detail-table-wrap"><table><caption className="login-sr-only">Riwayat pembacaan sensor perangkat {data.serial}</caption><thead><tr><th scope="col">Waktu</th><th scope="col">Level air</th><th scope="col">Jarak</th></tr></thead><tbody>{readings.map(item => <tr key={item._id}><td>{formatDate(item.createdAt)}</td><td>{formatValue(item.waterLevel)}%</td><td>{formatValue(item.distance)} cm</td></tr>)}{!readings.length && <tr><td colSpan={3}>Belum ada data sensor.</td></tr>}</tbody></table></div> : chartData.length < 2 ? <div className="detail-chart-empty"><span className="dashboard-empty-icon"><Waves size={32} aria-hidden="true" /></span><h3>{chartData.length ? 'Menunggu pembacaan berikutnya' : 'Riwayat air akan tampil di sini'}</h3><p>{chartData.length ? 'Grafik ditampilkan setelah tersedia minimal dua pembacaan.' : 'Pastikan perangkat menggunakan serial yang sesuai dan mengirimkan data sensor.'}</p></div> : <><div className="detail-chart" role="img" aria-label={`Grafik ${chartData.length} pembacaan level air. Pembacaan terbaru ${formatValue(latest?.waterLevel)} persen. Gunakan tombol Lihat data untuk tabel lengkap.`}><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData} margin={{ top: 16, right: 12, left: -14, bottom: 8 }}><defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#4199f6" stopOpacity={0.25} /><stop offset="100%" stopColor="#4199f6" stopOpacity={0.02} /></linearGradient></defs><CartesianGrid vertical={false} stroke="#edf2f9" strokeDasharray="4 4" /><XAxis dataKey="timestamp" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatTime} tick={{ fontSize: 10, fill: '#647189' }} minTickGap={35} axisLine={false} tickLine={false} /><YAxis domain={[0, 'auto']} tickFormatter={value => `${value}%`} tick={{ fontSize: 10, fill: '#647189' }} axisLine={false} tickLine={false} /><Tooltip labelFormatter={value => formatTime(Number(value))} formatter={value => [`${formatValue(Number(value))}%`, 'Level air']} contentStyle={{ borderRadius: 12, borderColor: '#e3eaf5', fontSize: 12 }} /><Area type="linear" dataKey="level" stroke="#3184ee" strokeWidth={2.5} fill={`url(#${gradientId})`} isAnimationActive={false} dot={false} /></AreaChart></ResponsiveContainer></div><div className="detail-chart-legend"><span />Level air (%)<span className="detail-chart-count">{chartData.length} pembacaan</span></div></>}
+      </section><aside className="detail-config"><div className="detail-card-heading"><h2>Informasi wadah</h2><span className="create-section-icon blue"><Info size={18} aria-hidden="true" /></span></div><dl><div><dt>Kedalaman wadah</dt><dd>{formatValue(data.kedalaman)} cm</dd></div><div><dt>Keran tertutup</dt><dd>{formatValue(data.keranTutup)} cm</dd></div><div><dt>Keran normal</dt><dd>{formatValue(data.keranNormal)} cm</dd></div><div><dt>Keran terbuka</dt><dd>{formatValue(data.keranBuka)} cm</dd></div></dl><div className="detail-config-note"><Info size={15} aria-hidden="true" /><p>Jarak keran diukur dari sensor ke permukaan air. Indikasi posisi keran mengikuti nilai konfigurasi, bukan konfirmasi gerakan perangkat.</p></div><p className="detail-config-date">Dibuat: {formatDate(data.createdAt)}<br />Diperbarui: {formatDate(data.updatedAt)}</p><Link href={`/pool/${data._id}/update`} className="dash-button dash-button-monitor">Ubah konfigurasi<ArrowRight size={16} aria-hidden="true" /></Link></aside></div>
+    </>}
+    <footer className="dashboard-footer"><Waves size={15} aria-hidden="true" />SIMONIKA<span>Monitoring air yang lebih sederhana.</span></footer>
+  </main></div>;
+}

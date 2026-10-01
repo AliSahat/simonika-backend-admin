@@ -1,4 +1,5 @@
 import '@/styles/globals.css';
+import '@/styles/dashboard.css';
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
 
@@ -11,7 +12,7 @@ export default function App({ Component, pageProps }: AppProps) {
         </Head>
       </div>
       <div>
-        <Component {...pageProps} />;
+        <Component {...pageProps} />
       </div>
     </div>
   );

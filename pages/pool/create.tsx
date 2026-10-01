@@ -2,290 +2,75 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 import axios from 'axios';
 import Sidebar from '@/components/Sidebar';
-import { Icon } from '@iconify/react';
+import WaterWaves from '@/components/WaterWaves';
+import { ArrowLeft, ArrowRight, Waves, House, Info, Ruler, SlidersHorizontal, Check, Save, Droplet, Radio, ShieldCheck } from 'lucide-react';
 
-const CreatePoolPage = () => {
+const initialForm = { serial: '', namaWadah: '', kedalaman: '', keranTutup: '', keranNormal: '', keranBuka: '' };
+type FieldName = keyof typeof initialForm;
+const valveFields = [
+  { name: 'keranTutup' as const, label: 'Keran tertutup', hint: 'Jarak untuk posisi tertutup', tone: 'slate' },
+  { name: 'keranNormal' as const, label: 'Keran normal', hint: 'Jarak untuk posisi normal', tone: 'blue' },
+  { name: 'keranBuka' as const, label: 'Keran terbuka', hint: 'Jarak untuk posisi terbuka', tone: 'green' },
+];
+
+export default function CreatePoolPage() {
   const router = useRouter();
-
-  const [form, setForm] = useState({
-    serial: '',
-    namaWadah: '',
-    kedalaman: '',
-    keranTutup: '',
-    keranNormal: '',
-    keranBuka: '',
-  });
-
+  const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(false);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+  const [error, setError] = useState('');
+  const [touched, setTouched] = useState<Partial<Record<FieldName, boolean>>>({});
+  const fieldError = (name: FieldName) => {
+    if (!form[name].trim()) return 'Bagian ini wajib diisi.';
+    if (name !== 'serial' && name !== 'namaWadah' && (!Number.isFinite(Number(form[name])) || Number(form[name]) <= 0)) return 'Masukkan angka lebih dari 0.';
+    return '';
   };
-
+  const completed = (Object.keys(form) as FieldName[]).filter(name => !fieldError(name)).length;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => setForm(previous => ({ ...previous, [e.target.name]: e.target.value }));
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+    setTouched(Object.fromEntries(Object.keys(form).map(name => [name, true])));
+    if ((Object.keys(form) as FieldName[]).some(name => fieldError(name))) return;
     setLoading(true);
-
+    setError('');
     try {
       const token = localStorage.getItem('token');
-
-      await axios.post(
-        '/api/pool',
-        {
-          serial: form.serial,
-          namaWadah: form.namaWadah,
-          kedalaman: Number(form.kedalaman),
-          keranTutup: Number(form.keranTutup),
-          keranNormal: Number(form.keranNormal),
-          keranBuka: Number(form.keranBuka),
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      router.push('/pool/read');
-    } catch (error) {
-      console.error('Error creating pool:', error);
-      alert('Gagal membuat pool!');
-      setLoading(false);
-    }
+      await axios.post('/api/pool', { serial: form.serial.trim(), namaWadah: form.namaWadah.trim(), kedalaman: Number(form.kedalaman), keranTutup: Number(form.keranTutup), keranNormal: Number(form.keranNormal), keranBuka: Number(form.keranBuka) }, { headers: { Authorization: `Bearer ${token}` } });
+      await router.push('/pool/read');
+    } catch (err) {
+      setError(axios.isAxiosError(err) && typeof err.response?.data?.message === 'string' ? err.response.data.message : 'Wadah belum berhasil disimpan. Periksa koneksi Anda dan coba lagi.');
+    } finally { setLoading(false); }
   };
+  const inputProps = (name: FieldName) => ({ id: name, name, value: form[name], onChange: handleChange, onBlur: () => setTouched(previous => ({ ...previous, [name]: true })), required: true, 'aria-invalid': !!(touched[name] && fieldError(name)), 'aria-describedby': `${name}-hint${touched[name] && fieldError(name) ? ` ${name}-error` : ''}` });
+  const renderError = (name: FieldName) => touched[name] && fieldError(name) ? <p className="create-field-error" id={`${name}-error`}>{fieldError(name)}</p> : null;
 
-  return (
-    <div className="bg-gradient-to-br from-blue-50 to-cyan-50 min-h-screen">
-      <Sidebar />
-      <div className="pl-[150px] pt-8 px-8 pb-8">
-        {/* Header */}
-        <div className="mb-8">
-          <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-600 hover:text-gray-800 mb-4 transition-colors">
-            <Icon icon="mdi:arrow-left" width="20" />
-            <span>Kembali</span>
-          </button>
-
-          <div className="flex items-center gap-3 mb-2">
-            <Icon icon="mdi:plus-circle" className="text-blue-600" width="36" />
-            <h1 className="text-4xl font-bold text-gray-800">Tambah Wadah Baru</h1>
-          </div>
-          <p className="text-gray-600 ml-12">Lengkapi formulir untuk menambahkan wadah baru</p>
-        </div>
-
-        {/* Form Container */}
-        <div className="max-w-4xl">
-          <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100">
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Section: Informasi Dasar */}
-              <div>
-                <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                  <Icon icon="mdi:information" className="text-blue-600" width="24" />
-                  Informasi Dasar
-                </h2>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {/* Serial Number */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 font-semibold text-gray-700">
-                      <Icon icon="mdi:barcode-scan" className="text-blue-600" width="20" />
-                      Serial Number
-                    </label>
-                    <div className="relative">
-                      <input
-                        name="serial"
-                        placeholder="Masukkan serial number"
-                        value={form.serial}
-                        onChange={handleChange}
-                        required
-                        className="w-full border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 p-3 pl-10 rounded-xl transition-all outline-none"
-                      />
-                      <Icon icon="mdi:barcode" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" width="20" />
-                    </div>
-                  </div>
-
-                  {/* Nama Wadah */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 font-semibold text-gray-700">
-                      <Icon icon="mdi:water" className="text-cyan-600" width="20" />
-                      Nama Wadah
-                    </label>
-                    <div className="relative">
-                      <input
-                        name="namaWadah"
-                        placeholder="Masukkan nama wadah"
-                        value={form.namaWadah}
-                        onChange={handleChange}
-                        required
-                        className="w-full border-2 border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 p-3 pl-10 rounded-xl transition-all outline-none"
-                      />
-                      <Icon icon="mdi:rename-box" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" width="20" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section: Dimensi Wadah */}
-              <div className="pt-6 border-t border-gray-200">
-                <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                  <Icon icon="mdi:ruler" className="text-purple-600" width="24" />
-                  Dimensi Wadah
-                </h2>
-
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 font-semibold text-gray-700">
-                    <Icon icon="mdi:arrow-expand-vertical" className="text-purple-600" width="20" />
-                    Kedalaman Wadah
-                  </label>
-                  <div className="relative">
-                    <input
-                      name="kedalaman"
-                      placeholder="Masukkan kedalaman"
-                      type="number"
-                      value={form.kedalaman}
-                      onChange={handleChange}
-                      required
-                      className="w-full border-2 border-gray-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 p-3 pl-10 pr-12 rounded-xl transition-all outline-none"
-                    />
-                    <Icon icon="mdi:arrow-down" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" width="20" />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">cm</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section: Konfigurasi Keran */}
-              <div className="pt-6 border-t border-gray-200">
-                <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                  <Icon icon="mdi:valve" className="text-green-600" width="24" />
-                  Konfigurasi Keran
-                </h2>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  {/* Keran Tutup */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 font-semibold text-gray-700">
-                      <Icon icon="mdi:valve-closed" className="text-gray-600" width="20" />
-                      Jarak Keran Tertutup
-                    </label>
-                    <div className="relative bg-gray-50 rounded-xl p-4 border-2 border-gray-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-200 transition-all">
-                      <input name="keranTutup" placeholder="0" type="number" value={form.keranTutup} onChange={handleChange} required className="w-full bg-transparent outline-none text-center text-2xl font-bold text-gray-700" />
-                      <p className="text-center text-xs text-gray-500 mt-1">centimeter</p>
-                    </div>
-                  </div>
-
-                  {/* Keran Normal */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 font-semibold text-gray-700">
-                      <Icon icon="mdi:valve" className="text-yellow-600" width="20" />
-                      Jarak Keran Normal
-                    </label>
-                    <div className="relative bg-yellow-50 rounded-xl p-4 border-2 border-yellow-200 focus-within:border-yellow-500 focus-within:ring-2 focus-within:ring-yellow-200 transition-all">
-                      <input name="keranNormal" placeholder="0" type="number" value={form.keranNormal} onChange={handleChange} required className="w-full bg-transparent outline-none text-center text-2xl font-bold text-yellow-700" />
-                      <p className="text-center text-xs text-yellow-600 mt-1">centimeter</p>
-                    </div>
-                  </div>
-
-                  {/* Keran Buka */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 font-semibold text-gray-700">
-                      <Icon icon="mdi:valve-open" className="text-green-600" width="20" />
-                      Jarak Keran Terbuka
-                    </label>
-                    <div className="relative bg-green-50 rounded-xl p-4 border-2 border-green-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-200 transition-all">
-                      <input name="keranBuka" placeholder="0" type="number" value={form.keranBuka} onChange={handleChange} required className="w-full bg-transparent outline-none text-center text-2xl font-bold text-green-700" />
-                      <p className="text-center text-xs text-green-600 mt-1">centimeter</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Info Helper */}
-                <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4">
-                  <div className="flex gap-3">
-                    <Icon icon="mdi:information" className="text-blue-600 flex-shrink-0 mt-0.5" width="20" />
-                    <div className="text-sm text-blue-800">
-                      <p className="font-semibold mb-1">Petunjuk Konfigurasi:</p>
-                      <ul className="list-disc list-inside space-y-1 text-blue-700">
-                        <li>Jarak diukur dari sensor ultrasonik ke permukaan air</li>
-                        <li>Keran Tertutup: jarak maksimal (wadah kosong)</li>
-                        <li>Keran Normal: jarak menengah (wadah setengah penuh)</li>
-                        <li>Keran Terbuka: jarak minimal (wadah penuh)</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-6 border-t border-gray-200 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => router.back()}
-                  className="flex-1 flex items-center justify-center gap-2 border-2 border-gray-300 text-gray-700 py-3 px-6 rounded-xl font-semibold hover:bg-gray-50 transition-all"
-                  disabled={loading}
-                >
-                  <Icon icon="mdi:close" width="20" />
-                  <span>Batal</span>
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white py-3 px-6 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? (
-                    <>
-                      <Icon icon="mdi:loading" className="animate-spin" width="20" />
-                      <span>Menyimpan...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Icon icon="mdi:check-circle" width="20" />
-                      <span>Simpan Wadah</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-
-          {/* Preview Card */}
-          <div className="mt-6 bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <Icon icon="mdi:eye" className="text-blue-600" width="24" />
-              Preview Data
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-600 mb-1">Serial</p>
-                <p className="font-semibold text-gray-800">{form.serial || '-'}</p>
-              </div>
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-600 mb-1">Nama Wadah</p>
-                <p className="font-semibold text-gray-800">{form.namaWadah || '-'}</p>
-              </div>
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-600 mb-1">Kedalaman</p>
-                <p className="font-semibold text-gray-800">{form.kedalaman ? `${form.kedalaman} cm` : '-'}</p>
-              </div>
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-600 mb-1">Keran Tutup</p>
-                <p className="font-semibold text-gray-700">{form.keranTutup ? `${form.keranTutup} cm` : '-'}</p>
-              </div>
-              <div className="bg-yellow-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-600 mb-1">Keran Normal</p>
-                <p className="font-semibold text-yellow-700">{form.keranNormal ? `${form.keranNormal} cm` : '-'}</p>
-              </div>
-              <div className="bg-green-50 p-3 rounded-lg">
-                <p className="text-xs text-gray-600 mb-1">Keran Buka</p>
-                <p className="font-semibold text-green-700">{form.keranBuka ? `${form.keranBuka} cm` : '-'}</p>
-              </div>
-            </div>
-          </div>
-        </div>
+  return <div className="dashboard-page create-page">
+    <Sidebar expanded />
+    <main className="dashboard-main">
+      <WaterWaves className="dashboard-header-waves" />
+      <div className="dashboard-topline"><span className="dashboard-breadcrumb"><House size={15} aria-hidden="true" /><Link href="/pool/read">Workspace</Link><span>/</span><strong>Tambah wadah</strong></span><span className="dashboard-context"><span className="dashboard-context-dot" />Monitoring air</span></div>
+      <Link href="/pool/read" className="create-back"><ArrowLeft size={16} aria-hidden="true" />Kembali ke daftar wadah</Link>
+      <header className="dashboard-header create-header"><div><p className="dashboard-eyebrow">RUANG BARU UNTUK AIR ANDA</p><h1>Tambah wadah baru</h1><p>Hubungkan perangkat dan siapkan wadah untuk mulai dipantau.</p></div><span className="create-header-tag"><Waves size={18} aria-hidden="true" />Konfigurasi wadah</span></header>
+      <div className="create-layout">
+        <form className="create-form" onSubmit={handleSubmit} noValidate aria-busy={loading}>
+          <div className="create-form-intro"><div><h2>Detail wadah</h2><p>Lengkapi informasi berikut. Semua kolom wajib diisi.</p></div><span><span className="create-required-dot" />Wajib diisi</span></div>
+          <fieldset disabled={loading} className="create-fields">
+            <section className="create-section" aria-labelledby="identity-heading"><div className="create-section-heading"><span className="create-section-icon blue"><Info size={20} aria-hidden="true" /></span><div><h3 id="identity-heading">Informasi dasar</h3><p>Beri identitas wadah dan perangkat Anda.</p></div><span className="create-section-number">01</span></div>
+              <div className="create-input-grid"><div className="create-field"><label htmlFor="namaWadah">Nama wadah <span>*</span></label><input {...inputProps('namaWadah')} placeholder="Contoh: Kolam utama" autoComplete="off" /><p id="namaWadah-hint">Gunakan nama yang mudah Anda kenali.</p>{renderError('namaWadah')}</div><div className="create-field"><label htmlFor="serial">Serial perangkat <span>*</span></label><input {...inputProps('serial')} placeholder="Masukkan serial perangkat" autoComplete="off" spellCheck={false} /><p id="serial-hint">Sesuaikan dengan serial pada perangkat Anda.</p>{renderError('serial')}</div></div>
+            </section>
+            <section className="create-section" aria-labelledby="depth-heading"><div className="create-section-heading"><span className="create-section-icon violet"><Ruler size={20} aria-hidden="true" /></span><div><h3 id="depth-heading">Dimensi wadah</h3><p>Tentukan kedalaman wadah dalam sentimeter.</p></div><span className="create-section-number">02</span></div><div className="create-depth-layout"><div className="create-field"><label htmlFor="kedalaman">Kedalaman wadah <span>*</span></label><div className="create-unit-input"><input {...inputProps('kedalaman')} type="number" min="0.01" step="any" placeholder="Contoh: 150" /><span>cm</span></div><p id="kedalaman-hint">Ukur dari dasar hingga bagian atas wadah.</p>{renderError('kedalaman')}</div><div className="create-measure-note"><Ruler size={20} aria-hidden="true" /><p>Gunakan ukuran wadah sebenarnya agar konfigurasi sesuai dengan instalasi Anda.</p></div></div></section>
+            <section className="create-section" aria-labelledby="valves-heading"><div className="create-section-heading"><span className="create-section-icon green"><SlidersHorizontal size={20} aria-hidden="true" /></span><div><h3 id="valves-heading">Konfigurasi keran</h3><p>Atur jarak sensor untuk setiap posisi keran.</p></div><span className="create-section-number">03</span></div><div className="create-valve-grid">{valveFields.map(field => <div className={`create-valve create-valve-${field.tone}`} key={field.name}><label htmlFor={field.name}><span />{field.label}</label><div className="create-unit-input"><input {...inputProps(field.name)} type="number" min="0.01" step="any" placeholder="0" /><span>cm</span></div><p id={`${field.name}-hint`}>{field.hint}</p>{renderError(field.name)}</div>)}</div><div className="create-info"><Info size={18} aria-hidden="true" /><p><strong>Jarak sensor, bukan tinggi air.</strong> Nilai diukur dari sensor ultrasonik ke permukaan air. Sesuaikan setiap posisi dengan konfigurasi perangkat Anda.</p></div></section>
+          </fieldset>
+          {error && <div className="create-submit-error" role="alert"><Info size={20} aria-hidden="true" /><p>{error}</p></div>}
+          <div className="create-actions"><span><ShieldCheck size={16} aria-hidden="true" />Periksa detail sebelum menyimpan.</span><div><button type="button" className="dash-button dash-button-secondary" disabled={loading} onClick={() => router.push('/pool/read')}>Batal</button><button type="submit" className="dash-button dash-button-primary" disabled={loading}>{loading ? <><span className="login-spinner" aria-hidden="true" />Menyimpan...</> : <><Save size={17} aria-hidden="true" />Simpan wadah</>}</button></div></div>
+          <span className="login-sr-only" role="status">{loading ? 'Sedang menyimpan wadah' : ''}</span>
+        </form>
+        <aside className="create-preview" aria-label="Pratinjau konfigurasi"><div className="create-preview-card"><span className="dashboard-eyebrow">PRATINJAU WADAH</span><div className="create-tank-art" aria-hidden="true"><span className="create-sensor"><Radio size={20} /></span><span className="create-sensor-line" /><div className="create-tank"><WaterWaves className="create-tank-water" /><Waves size={32} /></div><span className="create-tank-drop"><Droplet size={21} /></span></div><h2>{form.namaWadah.trim() || 'Wadah baru Anda'}</h2><p className="create-preview-serial">{form.serial.trim() || 'Serial perangkat belum diisi'}</p><dl className="create-preview-values"><div><dt>Kedalaman</dt><dd>{form.kedalaman ? `${form.kedalaman} cm` : '—'}</dd></div>{valveFields.map(field => <div key={field.name}><dt>{field.label}</dt><dd>{form[field.name] ? `${form[field.name]} cm` : '—'}</dd></div>)}</dl><div className="create-completion"><div><span>Informasi terisi</span><strong>{completed}/6</strong></div><progress value={completed} max={6} aria-label="Kelengkapan informasi wadah" /><p>{completed === 6 ? <><Check size={14} />Semua informasi siap diperiksa.</> : 'Pratinjau diperbarui saat Anda mengisi form.'}</p></div></div><div className="create-guide"><span className="create-section-icon blue"><Droplet size={20} aria-hidden="true" /></span><h3>Satu langkah menuju monitoring</h3><p>Setelah disimpan, wadah akan muncul di daftar. Buka monitoring untuk melihat data yang dikirim perangkat.</p><Link href="/pool/read">Lihat daftar wadah<ArrowRight size={15} aria-hidden="true" /></Link></div></aside>
       </div>
-    </div>
-  );
-};
-
-export default CreatePoolPage;
+      <footer className="dashboard-footer"><Waves size={15} aria-hidden="true" />SIMONIKA<span>Monitoring air yang lebih sederhana.</span></footer>
+    </main>
+  </div>;
+}
