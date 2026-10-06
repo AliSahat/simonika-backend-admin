@@ -3,6 +3,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import mongoose from 'mongoose';
 import { WaterLevel } from '@/models/WaterLevel';
 import verifyCors, { cors } from '@/middleware/verifyCors';
+import { connectMqtt } from '@/lib/mqttClient';
 
 async function connectDB() {
   if (mongoose.connection.readyState >= 1) return;
@@ -10,6 +11,7 @@ async function connectDB() {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  connectMqtt();
   await verifyCors(req, res, cors);
   await connectDB();
 

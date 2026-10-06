@@ -5,6 +5,9 @@ export interface IWaterLevel extends Document {
   serial: string;
   waterLevel: number;
   distance: number;
+  timestamp?: number;
+  uptimeMs?: number;
+  sequence?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -18,6 +21,15 @@ const WaterLevelSchema: Schema<IWaterLevel> = new Schema<IWaterLevel>(
       type: Number,
     },
     distance: {
+      type: Number,
+    },
+    timestamp: {
+      type: Number,
+    },
+    uptimeMs: {
+      type: Number,
+    },
+    sequence: {
       type: Number,
     },
   },

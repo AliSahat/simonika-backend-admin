@@ -60,10 +60,13 @@ const LoginPage: React.FC = () => {
         }),
       });
 
-      const data: LoginResponse | ApiError = await response.json();
+      const data: LoginResponse | ApiError = await response.json().catch(
+        () => ({ message: "Response dari server tidak valid" }),
+      );
 
       if (!response.ok) {
-        throw new Error((data as ApiError).message || "Login gagal");
+        setError((data as ApiError).message || "Login gagal");
+        return;
       }
 
       const loginData = data as LoginResponse;
@@ -77,7 +80,7 @@ const LoginPage: React.FC = () => {
         console.log("Login berhasil!", { user: loginData.user });
         await router.push("/pool/read");
       } else {
-        throw new Error("Data login tidak lengkap");
+        setError("Data login tidak lengkap");
       }
     } catch (error: unknown) {
       if (error instanceof Error) {
