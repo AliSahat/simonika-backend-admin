@@ -6,9 +6,12 @@ export interface IPool extends Document {
   serial: string;
   namaWadah: string;
   kedalaman: number;
-  keranTutup: number;
-  keranNormal: number;
-  keranBuka: number;
+  jarakSensorDasar: number;
+  batasIsiMulai: number;
+  batasIsiBerhenti: number;
+  batasBuangMulai: number;
+  batasBuangBerhenti: number;
+  modeAuto: boolean;
   isActive?: boolean;
   createdAt?: Date;
   updatedAt?: Date;
@@ -23,6 +26,9 @@ const PoolSchema: Schema<IPool> = new Schema<IPool>(
     },
     serial: {
       type: String,
+      required: true,
+      trim: true,
+      index: true,
     },
     namaWadah: {
       type: String,
@@ -32,18 +38,36 @@ const PoolSchema: Schema<IPool> = new Schema<IPool>(
     kedalaman: {
       type: Number,
       required: true,
+      min: 0,
     },
-    keranTutup: {
+    jarakSensorDasar: {
       type: Number,
       required: true,
+      min: 0,
     },
-    keranNormal: {
+    batasIsiMulai: {
       type: Number,
       required: true,
+      min: 0,
     },
-    keranBuka: {
+    batasIsiBerhenti: {
       type: Number,
       required: true,
+      min: 0,
+    },
+    batasBuangMulai: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    batasBuangBerhenti: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    modeAuto: {
+      type: Boolean,
+      default: true,
     },
     isActive: {
       type: Boolean,
@@ -55,4 +79,7 @@ const PoolSchema: Schema<IPool> = new Schema<IPool>(
   }
 );
 
-export const Pool: Model<IPool> = mongoose.models.Pool || mongoose.model<IPool>('Pool', PoolSchema);
+PoolSchema.index({ userId: 1, serial: 1 }, { unique: true });
+
+export const Pool: Model<IPool> =
+  mongoose.models.Pool || mongoose.model<IPool>('Pool', PoolSchema);
