@@ -1,77 +1,81 @@
-import mqtt from "mqtt";
-import mongoose from "mongoose";
+import mqtt, { type MqttClient } from "mqtt";
+import mongoConnect from "@/lib/mongoConnect";
+import { isWaterControlState, normalizeSerial } from "@/lib/waterControl";
+import { Pool } from "@/models/Pool";
 import { WaterLevel } from "@/models/WaterLevel";
 
-const MQTT_BROKER_URL = process.env.MQTT_BROKER_URL as string;
-const MQTT_USERNAME = process.env.MQTT_USERNAME as string;
-const MQTT_PASSWORD = process.env.MQTT_PASSWORD as string;
-export const MQTT_TOPIC = process.env.MQTT_TOPIC as string;
+export const MQTT_TELEMETRY_TOPIC = "devices/+/data";
 
-let latestData: Record<string, unknown> | string | null = null;
-let client: mqtt.MqttClient | null = null;
-
-async function connectDB() {
-  if (mongoose.connection.readyState >= 1) return;
-  await mongoose.connect(process.env.MONGODB_URI as string);
+declare global {
+  var simonikaMqttClient: MqttClient | undefined;
 }
 
-export function getLatestMqttData() {
-  return latestData;
+function mqttOptions() {
+  const brokerUrl = process.env.MQTT_BROKER_URL;
+  const username = process.env.MQTT_USERNAME;
+  const password = process.env.MQTT_PASSWORD;
+  if (!brokerUrl || !username || !password) throw new Error("Konfigurasi MQTT belum lengkap");
+  return { brokerUrl, username, password };
 }
 
-export function connectMqtt() {
-  if (client) return client;
+function finiteOptionalNumber(value: unknown): value is number | undefined {
+  return value === undefined || (typeof value === "number" && Number.isFinite(value));
+}
 
-  client = mqtt.connect(MQTT_BROKER_URL, {
-    username: MQTT_USERNAME,
-    password: MQTT_PASSWORD,
-    protocol: "mqtts",
-    reconnectPeriod: 5000,
+async function processTelemetry(topic: string, message: Buffer): Promise<void> {
+  const match = /^devices\/([^/]+)\/data$/.exec(topic);
+  if (!match) return;
+  const topicSerial = normalizeSerial(match[1]);
+  const payload = JSON.parse(message.toString()) as Record<string, unknown>;
+  if (payload.serial !== undefined && normalizeSerial(payload.serial) !== topicSerial) {
+    throw new Error("Serial payload telemetry tidak sesuai dengan topic");
+  }
+  if (![payload.waterLevel, payload.distance].every((value) => typeof value === "number" && Number.isFinite(value))) {
+    throw new Error("waterLevel dan distance telemetry harus berupa angka finite");
+  }
+  if (typeof payload.sensorValid !== "boolean" || typeof payload.fillValveOpen !== "boolean" ||
+      typeof payload.drainValveOpen !== "boolean" || !isWaterControlState(payload.controlState) ||
+      !finiteOptionalNumber(payload.timestamp) || !finiteOptionalNumber(payload.uptimeMs) ||
+      !finiteOptionalNumber(payload.sequence)) {
+    throw new Error("Payload telemetry tidak valid atau tidak lengkap");
+  }
+
+  await mongoConnect();
+  const pool = await Pool.findOne({ serial: topicSerial, isActive: true }).select("_id userId");
+  if (!pool) throw new Error(`Telemetry ditolak: serial ${topicSerial} tidak terdaftar atau nonaktif`);
+  await WaterLevel.create({
+    poolId: pool._id, userId: pool.userId, serial: topicSerial,
+    waterLevel: payload.waterLevel, distance: payload.distance, timestamp: payload.timestamp,
+    uptimeMs: payload.uptimeMs, sequence: payload.sequence, sensorValid: payload.sensorValid,
+    fillValveOpen: payload.fillValveOpen, drainValveOpen: payload.drainValveOpen,
+    controlState: payload.controlState,
   });
+}
 
-  client.on("connect", () => {
-    console.log("✅ MQTT Connected");
-    client?.subscribe(MQTT_TOPIC, (err) => {
-      console.log(
-        err ? "❌ Subscribe Error" : `📡 Subscribed to ${MQTT_TOPIC}`,
-      );
-    });
-  });
-
-  client.on("error", (err) => {
-    console.error("❌ MQTT Error:", err.message);
-  });
-
-  client.on("message", async (topic, message) => {
-    if (topic !== MQTT_TOPIC) return;
-
-    try {
-      const data = JSON.parse(message.toString()) as Record<string, unknown>;
-      latestData = data;
-
-      const { serial, waterLevel, distance, timestamp, uptimeMs, sequence } =
-        data;
-
-      if (
-        typeof serial === "string" &&
-        (typeof waterLevel === "number" || typeof distance === "number")
-      ) {
-        await connectDB();
-        await WaterLevel.create({
-          serial,
-          waterLevel,
-          distance,
-          timestamp,
-          uptimeMs,
-          sequence,
-        });
-        console.log("✅ Saved to DB", data);
-      }
-    } catch (err) {
-      latestData = message.toString();
-      console.error("❌ Failed to process MQTT data:", err);
-    }
-  });
-
+export function connectMqtt(): MqttClient {
+  if (global.simonikaMqttClient) return global.simonikaMqttClient;
+  const { brokerUrl, username, password } = mqttOptions();
+  const client = mqtt.connect(brokerUrl, { username, password, protocol: "mqtts", reconnectPeriod: 5000 });
+  global.simonikaMqttClient = client;
+  client.on("connect", () => client.subscribe(MQTT_TELEMETRY_TOPIC, { qos: 1 }, (error) => {
+    if (error) console.error("MQTT subscribe error:", error.message);
+  }));
+  client.on("message", (topic, message) => void processTelemetry(topic, message).catch((error: unknown) => {
+    console.error("MQTT telemetry rejected:", error instanceof Error ? error.message : error);
+  }));
+  client.on("error", (error) => console.error("MQTT connection error:", error.message));
   return client;
+}
+
+export function publishMqtt(topic: string, payload: object): Promise<void> {
+  if (!/^devices\/[a-z0-9][a-z0-9_-]{2,63}\/command$/.test(topic)) {
+    return Promise.reject(new Error("Topic command MQTT tidak valid"));
+  }
+  const client = connectMqtt();
+  return new Promise((resolve, reject) => client.publish(topic, JSON.stringify(payload), { qos: 1 },
+    (error) => error ? reject(error) : resolve()));
+}
+
+export function getMqttConnectionStatus(): boolean {
+  return global.simonikaMqttClient?.connected ?? false;
 }

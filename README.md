@@ -60,3 +60,28 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+# Catatan backend MQTT SIMONIKA
+
+Backend berlangganan ke `devices/+/data` dan menerbitkan konfigurasi ke
+`devices/{serial}/command`. Kredensial broker hanya disimpan pada environment
+server. Broker harus menerapkan ACL agar tiap perangkat hanya dapat publish dan
+subscribe pada topic serialnya sendiri.
+
+Subscriber MQTT yang dimulai dari API route Next.js tidak dijamin hidup 24/7 pada
+platform serverless seperti Vercel. Untuk penerimaan telemetry produksi yang
+andal, jalankan modul subscriber sebagai worker/service always-on. Perubahan
+deployment tersebut tidak termasuk dalam pekerjaan ini.
+
+## Migrasi data lama
+
+Dokumen Pool lama (`keranTutup`, `keranNormal`, `keranBuka`) tidak dipetakan
+otomatis karena tidak memiliki `jarakSensorDasar` dan `batasBuangMulai`, serta
+makna field lama tidak cukup pasti. Isi keenam field konfigurasi baru dan
+`modeAuto` setelah verifikasi per wadah, lalu hapus field lama dalam migrasi
+terkontrol. Sebelum membuat index unik `unique_device_serial`, audit dan
+selesaikan serial kosong/duplikat.
+
+Telemetry baru menyimpan `poolId` dan `userId`. Riwayat lama yang hanya memiliki
+`serial` tidak ditampilkan oleh API sampai dimigrasikan berdasarkan bukti
+kepemilikan pada waktu telemetry dibuat; jangan mengaitkannya otomatis jika
+serial pernah berpindah pemilik.
