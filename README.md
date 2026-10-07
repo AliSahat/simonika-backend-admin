@@ -1,5 +1,27 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
 
+## Google Login
+
+Tambahkan environment variable berikut:
+
+```env
+MONGODB_URI=...
+JWT_SECRET=...
+GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+```
+
+Client mengirim Google ID token ke endpoint berikut:
+
+```http
+POST /api/auth/google
+Content-Type: application/json
+
+{"idToken":"<google-id-token>"}
+```
+
+Backend memverifikasi token dan audience ke Google, membuat user jika belum ada, lalu mengembalikan JWT aplikasi yang sama dengan login username/password.
+
 ## Getting Started
 
 First, run the development server:

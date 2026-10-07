@@ -65,6 +65,11 @@ body {
 .login-submit:hover { background: linear-gradient(110deg, #1e59d0, #4027d5 55%, #6425e9); box-shadow: 0 8px 20px #6d28d933; }
 .login-submit:active { background: #4c1d95; }
 .login-submit:disabled { opacity: .65; cursor: wait; }
+.login-divider { display: flex; align-items: center; gap: 12px; color: var(--login-muted); font-size: 12px; }
+.login-divider::before, .login-divider::after { content: ''; flex: 1; height: 1px; background: #e7eaf2; }
+.login-google-wrap { position: relative; min-height: 44px; display: flex; justify-content: center; overflow: hidden; }
+.login-google-button { width: 100%; min-height: 44px; }
+.login-google-loading { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255, 255, 255, .82); color: var(--login-muted); font-size: 13px; }
 .login-page button:focus-visible, .login-remember input:focus-visible { outline: 3px solid var(--login-primary); outline-offset: 3px; }
 .login-note { display: flex; align-items: center; justify-content: center; gap: 8px; border-top: 1px solid #ececf3; margin-top: 28px; padding-top: 22px; color: var(--login-muted); font-size: 12px; line-height: 1.6; }
 .login-note svg { flex-shrink: 0; }

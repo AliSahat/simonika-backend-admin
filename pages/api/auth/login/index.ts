@@ -58,6 +58,10 @@ export default async function handler(req: ApiRequest, res: NextApiResponse<ApiR
       return res.status(401).json({ message: 'Username atau password salah' });
     }
 
+    if (!user.password) {
+      return res.status(401).json({ message: 'Akun ini menggunakan login Google' });
+    }
+
     const isPasswordValid = await user.comparePassword(password);
 
     if (!isPasswordValid) {

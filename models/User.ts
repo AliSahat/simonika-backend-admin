@@ -7,7 +7,9 @@ const SALT_ROUNDS = 10;
 export interface IUser extends Document {
   name: string;
   username: string;
-  password: string;
+  password?: string;
+  email?: string;
+  googleId?: string;
   comparePassword(candidatePassword: string): Promise<boolean>;
   createdAt: Date;
   updatedAt: Date;
@@ -32,9 +34,23 @@ const userSchema = new Schema<IUser>(
     },
     password: {
       type: String,
-      required: true,
+      required: false,
       minlength: 6,
       select: false,
+    },
+    email: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      sparse: true,
+      unique: true,
+    },
+    googleId: {
+      type: String,
+      trim: true,
+      sparse: true,
+      unique: true,
+      index: true,
     },
   },
   { timestamps: true }
@@ -42,6 +58,7 @@ const userSchema = new Schema<IUser>(
 
 userSchema.pre<IUser>('save', async function (next) {
   if (!this.isModified('password')) return next();
+  if (!this.password) return next();
   try {
     const salt = await bcrypt.genSalt(SALT_ROUNDS);
     this.password = await bcrypt.hash(this.password, salt);
