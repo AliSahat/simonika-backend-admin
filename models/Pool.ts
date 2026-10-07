@@ -6,10 +6,13 @@ export interface IPool extends Document {
   serial: string;
   namaWadah: string;
   kedalaman: number;
-  keranTutup: number;
-  keranNormal: number;
-  keranBuka: number;
-  isActive?: boolean;
+  jarakSensorDasar: number;
+  batasIsiMulai: number;
+  batasIsiBerhenti: number;
+  batasBuangMulai: number;
+  batasBuangBerhenti: number;
+  modeAuto: boolean;
+  isActive: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -23,6 +26,9 @@ const PoolSchema: Schema<IPool> = new Schema<IPool>(
     },
     serial: {
       type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
     },
     namaWadah: {
       type: String,
@@ -33,17 +39,30 @@ const PoolSchema: Schema<IPool> = new Schema<IPool>(
       type: Number,
       required: true,
     },
-    keranTutup: {
+    jarakSensorDasar: {
       type: Number,
       required: true,
     },
-    keranNormal: {
+    batasIsiMulai: {
       type: Number,
       required: true,
     },
-    keranBuka: {
+    batasIsiBerhenti: {
       type: Number,
       required: true,
+    },
+    batasBuangMulai: {
+      type: Number,
+      required: true,
+    },
+    batasBuangBerhenti: {
+      type: Number,
+      required: true,
+    },
+    modeAuto: {
+      type: Boolean,
+      required: true,
+      default: true,
     },
     isActive: {
       type: Boolean,
@@ -54,5 +73,8 @@ const PoolSchema: Schema<IPool> = new Schema<IPool>(
     timestamps: true,
   }
 );
+
+// Serial is a device identity, so it cannot be claimed by another user either.
+PoolSchema.index({ serial: 1 }, { unique: true, name: 'unique_device_serial' });
 
 export const Pool: Model<IPool> = mongoose.models.Pool || mongoose.model<IPool>('Pool', PoolSchema);

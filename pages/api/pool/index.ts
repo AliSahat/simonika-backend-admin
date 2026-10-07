@@ -1,80 +1,39 @@
-// @/pages/api/pool/index.ts
 import type { NextApiRequest, NextApiResponse } from "next";
-import jwt from "jsonwebtoken";
 import mongoConnect from "@/lib/mongoConnect";
+import { AuthError, getAuthenticatedUserId } from "@/lib/auth";
+import { ConfigValidationError, validatePoolConfig } from "@/lib/waterControl";
 import verifyCors, { cors } from "@/middleware/verifyCors";
 import { Pool } from "@/models/Pool";
 
-const JWT_SECRET = process.env.JWT_SECRET || "";
+const isDuplicateKey = (error: unknown) => typeof error === "object" && error !== null && "code" in error && error.code === 11000;
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   await verifyCors(req, res, cors);
-  await mongoConnect();
-
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token)
-    return res
-      .status(401)
-      .json({ success: false, message: "Token tidak ditemukan" });
-
+  if (req.method === "OPTIONS") return res.status(200).end();
+  let userId: string;
+  try { userId = getAuthenticatedUserId(req); }
+  catch (error) {
+    if (error instanceof AuthError) return res.status(401).json({ success: false, message: error.message });
+    console.error("Pool auth configuration error:", error);
+    return res.status(500).json({ success: false, message: "Konfigurasi server tidak valid" });
+  }
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-    const userId = decoded.userId;
-
-    switch (req.method) {
-      case "POST": {
-        const {
-          serial,
-          namaWadah,
-          kedalaman,
-          keranTutup,
-          keranNormal,
-          keranBuka,
-        } = req.body;
-
-        if (
-          !serial ||
-          !namaWadah ||
-          !kedalaman ||
-          !keranTutup ||
-          !keranNormal ||
-          !keranBuka
-        ) {
-          return res
-            .status(400)
-            .json({ success: false, message: "Semua field wajib diisi" });
-        }
-
-        const pool = await Pool.create({
-          userId,
-          serial,
-          namaWadah,
-          kedalaman,
-          keranTutup,
-          keranNormal,
-          keranBuka,
-        });
-
-        return res.status(201).json({ success: true, data: pool });
-      }
-
-      case "GET": {
-        const pools = await Pool.find({ userId }).sort({ createdAt: -1 });
-        return res.status(200).json({ success: true, data: pools });
-      }
-
-      default:
-        return res
-          .status(405)
-          .json({ success: false, message: "Metode tidak diizinkan" });
+    await mongoConnect();
+    if (req.method === "GET") {
+      const pools = await Pool.find({ userId }).sort({ createdAt: -1 });
+      return res.status(200).json({ success: true, data: pools });
     }
+    if (req.method === "POST") {
+      const input = validatePoolConfig((req.body ?? {}) as Record<string, unknown>);
+      if (await Pool.exists({ serial: input.serial })) return res.status(409).json({ success: false, message: "Serial perangkat sudah terdaftar" });
+      const pool = await Pool.create({ userId, ...input });
+      return res.status(201).json({ success: true, data: pool });
+    }
+    return res.status(405).json({ success: false, message: "Metode tidak diizinkan" });
   } catch (error) {
-    console.error("Error:", error);
-    return res
-      .status(401)
-      .json({ success: false, message: "Token tidak valid atau error server" });
+    if (error instanceof ConfigValidationError) return res.status(400).json({ success: false, message: error.message });
+    if (isDuplicateKey(error)) return res.status(409).json({ success: false, message: "Serial perangkat sudah terdaftar" });
+    console.error("Pool API error:", error);
+    return res.status(500).json({ success: false, message: "Terjadi kesalahan server" });
   }
 }
