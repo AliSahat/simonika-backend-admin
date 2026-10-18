@@ -44,13 +44,15 @@ Karena semua Client ID (Web, Android, iOS) dibuat dalam **1 Project Google Cloud
 
 ### B. Android Client ID (Wajib untuk Flutter Android)
 - **Application type:** `Android`
-- **Package name:** Sesuai `applicationId` di `android/app/build.gradle` project Flutter Anda (contoh: `com.simonika.mobile`).
+- **Package name:** Sesuai `applicationId` di `android/app/build.gradle.kts` project Flutter Anda (pada project ini: `com.example.simonika_mobile_app`).
 - **SHA-1 certificate fingerprint:** Ambil SHA-1 debug dari project Flutter Anda dengan menjalankan perintah ini di folder `android/` project Flutter:
   ```bash
   cd android && ./gradlew signingReport
   ```
   *(Atau menggunakan keytool:* `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`*)*
-- Simpan nilai Client ID-nya (misal: `222222-android.apps.googleusercontent.com`).
+  > [!NOTE]
+  > Nilai SHA-1 debug default pada mesin ini adalah: `C7:2E:5F:91:50:F3:8A:06:E4:47:89:D8:A9:35:E4:76:DD:BE:CF:52`
+- Simpan nilai Client ID-nya (misal: `782284226334-h01snmtrlibrupk8hbdb9hakb7rplo6d.apps.googleusercontent.com`).
 
 ### C. iOS Client ID (Opsional, jika build ke iOS)
 - **Application type:** `iOS`
@@ -80,37 +82,44 @@ GOOGLE_IOS_CLIENT_ID=333333-ios.apps.googleusercontent.com
 
 ## 4. Integrasi di Project Mobile Flutter
 
-### Langkah 1: Tambahkan Dependency di `pubspec.yaml`
+### Langkah 1: Dependency di `pubspec.yaml`
 
-Jalankan perintah berikut di project Flutter Anda:
-
-```bash
-flutter pub add google_sign_in http shared_preferences
-```
-
-Atau pastikan `pubspec.yaml` memuat:
+Project Flutter SIMONIKA (`simonika-mobile-app`) menggunakan dependency berikut di `pubspec.yaml`:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
-  google_sign_in: ^6.2.2
-  http: ^1.2.2
-  shared_preferences: ^2.3.2
+  google_sign_in: ^6.2.1
+  dio: ^5.9.0
+  shared_preferences: ^2.5.3
+```
+
+Asset logo Google disediakan di:
+```yaml
+flutter:
+  assets:
+    - assets/branding/google_g.png
 ```
 
 ### Langkah 2: Konfigurasi Platform (Android & iOS)
 
 - **Android:**
-  Tidak perlu menambahkan kode khusus di `AndroidManifest.xml`, cukup pastikan:
-  1. `applicationId` di `android/app/build.gradle` sama persis dengan **Package name** di Google Cloud Console.
-  2. SHA-1 fingerprint dari komputer Anda sudah terdaftar pada **Android OAuth Client ID** di Google Cloud Console.
+  1. `applicationId` di `android/app/build.gradle.kts` adalah `com.example.simonika_mobile_app` (cocokkan dengan **Package name** di Google Cloud Console).
+  2. SHA-1 fingerprint dari keystore debug komputer Anda:
+     ```bash
+     cd android && ./gradlew signingReport
+     ```
+     Debug SHA-1 saat ini: `C7:2E:5F:91:50:F3:8A:06:E4:47:89:D8:A9:35:E4:76:DD:BE:CF:52`.
+     Daftarkan SHA-1 ini pada **Android OAuth Client ID** di Google Cloud Console.
 
 - **iOS (`ios/Runner/Info.plist`):**
-  Jika menargetkan iOS, tambahkan `GIDClientID` dan `CFBundleURLTypes` (reversed client ID) ke `ios/Runner/Info.plist`:
+  Jika menargetkan iOS, konfigurasi reverse client ID dimuat dari `ios/Flutter/GoogleSignIn.xcconfig`:
+  ```text
+  GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.333333-ios
+  ```
+  Dan di `ios/Runner/Info.plist`:
   ```xml
-  <key>GIDClientID</key>
-  <string>333333-ios.apps.googleusercontent.com</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -118,167 +127,108 @@ dependencies:
       <string>Editor</string>
       <key>CFBundleURLSchemes</key>
       <array>
-        <!-- Kebalikan dari iOS Client ID -->
-        <string>com.googleusercontent.apps.333333-ios</string>
+        <string>$(GOOGLE_REVERSED_CLIENT_ID)</string>
       </array>
     </dict>
   </array>
   ```
 
-### Langkah 3: Buat `AuthService` di Flutter (`lib/services/auth_service.dart`)
+### Langkah 3: Konfigurasi Client ID di `config/google-auth.json`
 
-> [!IMPORTANT]
-> Pada Android, agar `googleAuth.idToken` tidak bernilai `null`, Anda **wajib** mengisi parameter `serverClientId` dengan **Web Client ID** (`GOOGLE_CLIENT_ID` dari backend).
+SIMONIKA Mobile menggunakan `--dart-define-from-file` untuk menyuntikkan Client ID secara aman tanpa hardcode.
+Buat/pastikan file `config/google-auth.json` berisi:
+
+```json
+{
+  "GOOGLE_WEB_CLIENT_ID": "782284226334-30ok042m0rvu07fmr4otsh7u082br0ru.apps.googleusercontent.com",
+  "GOOGLE_IOS_CLIENT_ID": ""
+}
+```
+
+Jalankan aplikasi dengan perintah:
+```bash
+flutter run --dart-define-from-file=config/google-auth.json
+```
+
+### Langkah 4: Implementasi Layanan (`lib/services/google_auth_service.dart`)
+
+Layanan autentikasi Google menggunakan `Dio` dan `GoogleSignIn`:
 
 ```dart
-import 'dart:convert';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../constants/api.dart';
 
-class SimonikaUser {
-  final String id;
-  final String name;
-  final String username;
-  final String? email;
+class GoogleAuthService {
+  GoogleAuthService({
+    Dio? client,
+    GoogleSignIn? googleSignIn,
+    this.webClientId = const String.fromEnvironment('GOOGLE_WEB_CLIENT_ID'),
+    this.iosClientId = const String.fromEnvironment('GOOGLE_IOS_CLIENT_ID'),
+  })  : _client = client ?? Dio(),
+        _googleSignIn = googleSignIn;
 
-  SimonikaUser({
-    required this.id,
-    required this.name,
-    required this.username,
-    this.email,
-  });
+  final Dio _client;
+  final String webClientId;
+  final String iosClientId;
+  GoogleSignIn? _googleSignIn;
 
-  factory SimonikaUser.fromJson(Map<String, dynamic> json) {
-    return SimonikaUser(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      username: json['username'] as String,
-      email: json['email'] as String?,
+  Future<bool> signIn() async {
+    final google = _googleSignIn ??= GoogleSignIn(
+      scopes: const ['email', 'profile'],
+      serverClientId: webClientId,
+      clientId: defaultTargetPlatform == TargetPlatform.iOS ? iosClientId : null,
     );
-  }
-}
 
-class AuthService {
-  /// Ganti dengan URL backend SIMONIKA Anda.
-  /// Catatan: Gunakan http://10.0.2.2:3000 jika tes dari Android Emulator ke localhost laptop.
-  static const String baseUrl = 'http://10.0.2.2:3000';
+    try {
+      final account = await google.signIn();
+      if (account == null) return false; // Dibatalkan oleh pengguna
 
-  /// Gunakan WEB CLIENT ID (sama dengan GOOGLE_CLIENT_ID di .env.local backend)
-  static const String webClientId = '111111-web.apps.googleusercontent.com';
+      final idToken = (await account.authentication).idToken;
+      if (idToken == null || idToken.trim().isEmpty) {
+        throw const GoogleLoginException('Gagal mendapatkan token Google.');
+      }
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email', 'profile'],
-    serverClientId: webClientId,
-  );
-
-  /// Login dengan Google dan tukarkan idToken menjadi JWT SIMONIKA
-  Future<SimonikaUser> signInWithGoogle() async {
-    // 1. Buka dialog pemilihan akun Google di HP
-    final GoogleSignInAccount? googleAccount = await _googleSignIn.signIn();
-    if (googleAccount == null) {
-      throw Exception('Login Google dibatalkan oleh pengguna');
-    }
-
-    // 2. Ambil idToken dari Google
-    final GoogleSignInAuthentication googleAuth =
-        await googleAccount.authentication;
-    final String? idToken = googleAuth.idToken;
-
-    if (idToken == null || idToken.isEmpty) {
-      throw Exception(
-        'Gagal mendapatkan Google ID Token. Pastikan serverClientId (Web Client ID) sudah benar.',
+      final response = await _client.post<dynamic>(
+        '$baseUrl/api/auth/google',
+        data: {'idToken': idToken},
       );
+
+      final data = response.data;
+      final token = data is Map ? data['token'] : null;
+      if (token is! String || token.trim().isEmpty) {
+        throw const GoogleLoginException('Respons login server tidak valid.');
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', token);
+      return true;
+    } finally {
+      try {
+        await google.signOut();
+      } catch (_) {}
     }
-
-    // 3. Kirim idToken ke endpoint backend SIMONIKA
-    final response = await http.post(
-      Uri.parse('$baseUrl/api/auth/google'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'idToken': idToken}),
-    );
-
-    final Map<String, dynamic> data = jsonDecode(response.body);
-
-    if (response.statusCode != 200) {
-      throw Exception(data['message'] ?? 'Login Google gagal di server');
-    }
-
-    final String? appJwtToken = data['token'] as String?;
-    final Map<String, dynamic>? userJson =
-        data['user'] as Map<String, dynamic>?;
-
-    if (appJwtToken == null || userJson == null) {
-      throw Exception('Respons login dari server tidak lengkap');
-    }
-
-    // 4. Simpan JWT SIMONIKA di penyimpanan lokal HP
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('token', appJwtToken);
-    await prefs.setString('user', jsonEncode(userJson));
-
-    return SimonikaUser.fromJson(userJson);
-  }
-
-  /// Ambil JWT Token untuk dikirim ke endpoint terproteksi (misal /api/pool/read)
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
-  }
-
-  /// Contoh memanggil endpoint profil /api/auth/profile menggunakan JWT
-  Future<SimonikaUser> fetchProfile() async {
-    final token = await getToken();
-    if (token == null) {
-      throw Exception('Belum login');
-    }
-
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/auth/profile'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-
-    final Map<String, dynamic> data = jsonDecode(response.body);
-    if (response.statusCode != 200) {
-      throw Exception(data['message'] ?? 'Gagal memuat profil');
-    }
-
-    return SimonikaUser.fromJson(data['user'] as Map<String, dynamic>);
-  }
-
-  /// Logout dari SIMONIKA & Google
-  Future<void> signOut() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token');
-    await prefs.remove('user');
-    await _googleSignIn.signOut();
   }
 }
 ```
 
-### Langkah 4: Contoh Pemakaian pada Tombol UI Flutter
+### Langkah 5: Integrasi Komponen UI (`GoogleSignInButton`)
+
+Tombol Google Sign-In terintegrasi pada **Halaman Login** (`LoginScreen`) dan **Halaman Register** (`RegisterScreen`):
 
 ```dart
-ElevatedButton.icon(
-  icon: const Icon(Icons.login),
-  label: const Text('Masuk dengan Google'),
-  onPressed: () async {
-    try {
-      final authService = AuthService();
-      final user = await authService.signInWithGoogle();
-      // Navigasi ke halaman Dashboard Kolam di Flutter
-      debugPrint('Berhasil login sebagai: ${user.name} (@${user.username})');
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
-    }
-  },
+GoogleSignInButton(
+  isLoading: _isGoogleLoading,
+  onPressed: isLoading ? null : loginWithGoogle,
 )
 ```
+
+Alur saat tombol ditekan:
+1. Memanggil `_googleAuthService.signIn()`.
+2. Jika berhasil, menampilkan snackbar sukses dan navigasi otomatis ke halaman beranda (`/bnav`).
+3. Jika gagal/error, menampilkan snackbar dengan pesan yang ramah pengguna.
 
 ---
 
