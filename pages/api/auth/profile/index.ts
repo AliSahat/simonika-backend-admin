@@ -50,9 +50,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const userProfile = {
-      id: user._id,
+      id: String(user._id),
       name: user.name,
       username: user.username,
+      email: user.email,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

@@ -19,6 +19,7 @@ interface ApiResponse {
     id: string;
     name: string;
     username: string;
+    email?: string;
     createdAt: Date;
     updatedAt: Date;
   };
@@ -86,6 +87,7 @@ export default async function handler(req: ApiRequest, res: NextApiResponse<ApiR
       id: String(user._id),
       name: user.name,
       username: user.username,
+      email: user.email,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

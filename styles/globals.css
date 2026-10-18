@@ -68,7 +68,9 @@ body {
 .login-divider { display: flex; align-items: center; gap: 12px; color: var(--login-muted); font-size: 12px; }
 .login-divider::before, .login-divider::after { content: ''; flex: 1; height: 1px; background: #e7eaf2; }
 .login-google-wrap { position: relative; min-height: 44px; display: flex; justify-content: center; overflow: hidden; }
-.login-google-button { width: 100%; min-height: 44px; }
+.login-google-button { width: 100%; min-height: 44px; display: flex; justify-content: center; }
+.login-google-fallback { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid var(--login-border); border-radius: 10px; background: white; color: #1f2937; font-size: 14px; font-weight: 500; cursor: pointer; transition: background .2s, border-color .2s; }
+.login-google-fallback:hover { background: #f8fafc; border-color: #cbd5e1; }
 .login-google-loading { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255, 255, 255, .82); color: var(--login-muted); font-size: 13px; }
 .login-page button:focus-visible, .login-remember input:focus-visible { outline: 3px solid var(--login-primary); outline-offset: 3px; }
 .login-note { display: flex; align-items: center; justify-content: center; gap: 8px; border-top: 1px solid #ececf3; margin-top: 28px; padding-top: 22px; color: var(--login-muted); font-size: 12px; line-height: 1.6; }
