@@ -122,3 +122,150 @@ export function validatePoolConfig(value: Record<string, unknown>): PoolConfigIn
 export function isWaterControlState(value: unknown): value is WaterControlState {
   return WATER_CONTROL_STATES.includes(value as WaterControlState);
 }
+
+export interface ParsedTelemetry {
+  topicSerial: string;
+  waterLevel?: number;
+  distance?: number;
+  timestamp?: number;
+  uptimeMs?: number;
+  sequence?: number;
+  sensorValid: boolean;
+  fillValveOpen: boolean;
+  drainValveOpen: boolean;
+  controlState: WaterControlState;
+}
+
+function finiteOptionalNumber(value: unknown): value is number | undefined {
+  return value === undefined || value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function toOptionalFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function deriveControlState(
+  rawState: unknown,
+  sensorValid: boolean,
+  fillValveOpen: boolean,
+  drainValveOpen: boolean,
+  modeAuto: unknown,
+  runLimitFault: unknown,
+): WaterControlState {
+  if (isWaterControlState(rawState)) return rawState;
+  if (!sensorValid || runLimitFault === true) return "FAULT";
+  if (modeAuto === false) return "MANUAL";
+  if (fillValveOpen) return "FILLING";
+  if (drainValveOpen) return "DRAINING";
+  return "IDLE";
+}
+
+export function parseTelemetryPayload(
+  topic: string,
+  message: Buffer | string,
+  cachedStatus?: Record<string, unknown>,
+): ParsedTelemetry | null {
+  const match = /^devices\/([^/]+)\/data$/.exec(topic);
+  if (!match) return null;
+  const topicSerial = normalizeSerial(match[1]);
+  const payload = JSON.parse(typeof message === "string" ? message : message.toString()) as Record<string, unknown>;
+
+  if (payload.serial !== undefined && normalizeSerial(payload.serial) !== topicSerial) {
+    throw new Error("Serial payload telemetry tidak sesuai dengan topic");
+  }
+
+  if (
+    !finiteOptionalNumber(payload.timestamp) ||
+    !finiteOptionalNumber(payload.uptimeMs) ||
+    !finiteOptionalNumber(payload.sequence)
+  ) {
+    throw new Error("Payload telemetry tidak valid atau tidak lengkap");
+  }
+
+  const hasV2Fields =
+    typeof payload.sensorValid === "boolean" ||
+    typeof payload.fillValveOpen === "boolean" ||
+    typeof payload.drainValveOpen === "boolean" ||
+    payload.controlState !== undefined;
+
+  const waterLevel = toOptionalFiniteNumber(payload.waterLevel);
+  const distance = toOptionalFiniteNumber(payload.distance);
+
+  if (hasV2Fields) {
+    if (
+      typeof payload.sensorValid !== "boolean" ||
+      typeof payload.fillValveOpen !== "boolean" ||
+      typeof payload.drainValveOpen !== "boolean" ||
+      !isWaterControlState(payload.controlState)
+    ) {
+      throw new Error("Payload telemetry tidak valid atau tidak lengkap");
+    }
+    if (payload.sensorValid && (waterLevel === undefined || distance === undefined)) {
+      throw new Error("waterLevel dan distance telemetry harus berupa angka finite saat sensorValid=true");
+    }
+    if (
+      (payload.waterLevel !== null && payload.waterLevel !== undefined && waterLevel === undefined) ||
+      (payload.distance !== null && payload.distance !== undefined && distance === undefined)
+    ) {
+      throw new Error("waterLevel dan distance telemetry harus berupa angka finite atau null");
+    }
+
+    return {
+      topicSerial,
+      ...(waterLevel === undefined ? {} : { waterLevel }),
+      ...(distance === undefined ? {} : { distance }),
+      timestamp: toOptionalFiniteNumber(payload.timestamp),
+      uptimeMs: toOptionalFiniteNumber(payload.uptimeMs),
+      sequence: toOptionalFiniteNumber(payload.sequence),
+      sensorValid: payload.sensorValid,
+      fillValveOpen: payload.fillValveOpen,
+      drainValveOpen: payload.drainValveOpen,
+      controlState: payload.controlState,
+    };
+  }
+
+  if (waterLevel === undefined || distance === undefined) {
+    throw new Error("waterLevel dan distance telemetry harus berupa angka finite");
+  }
+
+  const sensorValid =
+    typeof payload.sensorOk === "boolean"
+      ? payload.sensorOk
+      : typeof cachedStatus?.sensorOk === "boolean"
+        ? cachedStatus.sensorOk
+        : true;
+  const fillValveOpen =
+    typeof payload.kranIsi === "boolean"
+      ? payload.kranIsi
+      : typeof cachedStatus?.kranIsi === "boolean"
+        ? cachedStatus.kranIsi
+        : false;
+  const drainValveOpen =
+    typeof payload.kranBuang === "boolean"
+      ? payload.kranBuang
+      : typeof cachedStatus?.kranBuang === "boolean"
+        ? cachedStatus.kranBuang
+        : false;
+  const modeAuto = payload.modeAuto ?? cachedStatus?.modeAuto;
+  const runLimitFault = payload.runLimitFault ?? cachedStatus?.runLimitFault;
+
+  return {
+    topicSerial,
+    waterLevel,
+    distance,
+    timestamp: toOptionalFiniteNumber(payload.timestamp),
+    uptimeMs: toOptionalFiniteNumber(payload.uptimeMs),
+    sequence: toOptionalFiniteNumber(payload.sequence),
+    sensorValid,
+    fillValveOpen,
+    drainValveOpen,
+    controlState: deriveControlState(
+      payload.controlState,
+      sensorValid,
+      fillValveOpen,
+      drainValveOpen,
+      modeAuto,
+      runLimitFault,
+    ),
+  };
+}

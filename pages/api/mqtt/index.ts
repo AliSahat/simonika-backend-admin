@@ -3,6 +3,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import {
   connectMqtt,
   getMqttConnectionStatus,
+  MQTT_STATUS_TOPIC,
   MQTT_TELEMETRY_TOPIC,
 } from "@/lib/mqttClient";
 import { AuthError, getAuthenticatedUserId } from "@/lib/auth";
@@ -26,6 +27,7 @@ export default async function handler(
       success: true,
       connected: getMqttConnectionStatus(),
       telemetryTopic: MQTT_TELEMETRY_TOPIC,
+      statusTopic: MQTT_STATUS_TOPIC,
     });
   }
 

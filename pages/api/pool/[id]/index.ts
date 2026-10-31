@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import mongoose from "mongoose";
 import mongoConnect from "@/lib/mongoConnect";
 import { AuthError, getAuthenticatedUserId } from "@/lib/auth";
+import { connectMqtt } from "@/lib/mqttClient";
 import { ConfigValidationError, validatePoolConfig } from "@/lib/waterControl";
 import verifyCors, { cors } from "@/middleware/verifyCors";
 import { Pool } from "@/models/Pool";
@@ -20,6 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.error("Pool auth configuration error:", error);
     return res.status(500).json({ success: false, message: "Konfigurasi server tidak valid" });
   }
+  try { connectMqtt(); } catch { /* ignore auto-connect errors */ }
   const id = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id;
   if (!id || !mongoose.isValidObjectId(id)) return res.status(400).json({ success: false, message: "Pool ID tidak valid" });
   try {

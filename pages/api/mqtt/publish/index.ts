@@ -4,7 +4,7 @@ import mongoConnect from "@/lib/mongoConnect";
 import { AuthError, getAuthenticatedUserId } from "@/lib/auth";
 import { buildDeviceConfigPayload } from "@/lib/deviceConfig";
 import { ConfigValidationError } from "@/lib/waterControl";
-import { publishMqtt } from "@/lib/mqttClient";
+import { getDeviceStatus, publishMqtt } from "@/lib/mqttClient";
 import verifyCors, { cors } from "@/middleware/verifyCors";
 import { Pool } from "@/models/Pool";
 
@@ -35,6 +35,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const payload = buildDeviceConfigPayload(pool);
     const topic = `devices/${pool.serial}/command`;
     await publishMqtt(topic, payload);
+
+    // Jika status terakhir dari perangkat menunjukkan Firmware v1 (memiliki jarakDasar tanpa configReady),
+    // kirim juga perintah dalam format Firmware v1 agar perangkat v1 dapat menerima pembaruan konfigurasi.
+    const status = getDeviceStatus(pool.serial);
+    if (status && "jarakDasar" in status && !("configReady" in status) && pool.kedalaman > 0) {
+      const jarakDasar = Math.max(5, Math.min(400, Math.round(pool.jarakSensorDasar * 10) / 10));
+      const batasBawah = Math.max(0, Math.min(95, Math.round((pool.batasIsiMulai / pool.kedalaman) * 1000) / 10));
+      const batasAtas = Math.max(batasBawah + 5, Math.min(100, Math.round((pool.batasBuangMulai / pool.kedalaman) * 1000) / 10));
+      const rawHyst = Math.round(((pool.batasIsiBerhenti - pool.batasIsiMulai) / pool.kedalaman) * 1000) / 10;
+      const maxHyst = Math.max(0, Math.floor(((batasAtas - batasBawah - 0.2) / 2) * 10) / 10);
+      const hysteresis = Math.max(0, Math.min(10, maxHyst, rawHyst));
+      await publishMqtt(topic, {
+        serial: pool.serial,
+        modeAuto: pool.modeAuto,
+        isActive: pool.isActive,
+        jarakDasar,
+        batasBawah,
+        batasAtas,
+        hysteresis,
+      }).catch(() => undefined);
+    }
+
     return res.status(200).json({
       success: true,
       message: "Konfigurasi berhasil dipublish ke broker; penerapan oleh perangkat belum terkonfirmasi",
