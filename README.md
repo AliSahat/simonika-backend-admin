@@ -1,17 +1,19 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
 
-## Google Login
+## Google Login (Web & Mobile Flutter)
 
-Tambahkan environment variable berikut:
+Tambahkan environment variable berikut pada `.env.local`:
 
 ```env
 MONGODB_URI=...
 JWT_SECRET=...
 GOOGLE_CLIENT_ID=...apps.googleusercontent.com
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+GOOGLE_ANDROID_CLIENT_ID=...apps.googleusercontent.com
+GOOGLE_IOS_CLIENT_ID=...apps.googleusercontent.com
 ```
 
-Client mengirim Google ID token ke endpoint berikut:
+Client (Web maupun aplikasi Mobile Flutter) mengirim Google ID token ke endpoint berikut:
 
 ```http
 POST /api/auth/google
@@ -20,7 +22,9 @@ Content-Type: application/json
 {"idToken":"<google-id-token>"}
 ```
 
-Backend memverifikasi token dan audience ke Google, membuat user jika belum ada, lalu mengembalikan JWT aplikasi yang sama dengan login username/password.
+Backend memverifikasi token dan audience ke Google (mendukung Client ID Web, Android, dan iOS sekaligus), membuat atau menautkan user jika belum ada, lalu mengembalikan JWT aplikasi yang sama dengan login username/password.
+
+👉 **Panduan lengkap integrasi ke Mobile Flutter:** Lihat [docs/GOOGLE_OAUTH_FLUTTER.md](docs/GOOGLE_OAUTH_FLUTTER.md).
 
 ## Getting Started
 

@@ -6,10 +6,13 @@ import User from '@/models/User';
 import verifyCors, { cors } from '@/middleware/verifyCors';
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+const googleClient = new OAuth2Client();
 
-interface GoogleLoginRequest { idToken: string; }
+interface GoogleLoginRequest {
+  idToken?: string;
+  id_token?: string;
+  credential?: string;
+}
 
 interface ApiResponse {
   message: string;
@@ -24,6 +27,10 @@ interface ApiResponse {
   };
 }
 
+import { getAllowedGoogleClientIds, usernameBaseFromEmail } from '@/lib/googleAuth';
+
+export { getAllowedGoogleClientIds, usernameBaseFromEmail };
+
 function createAppToken(user: { _id: unknown; username: string; name: string }): string {
   if (!JWT_SECRET) throw new Error('JWT Secret tidak ditemukan');
   return jwt.sign(
@@ -31,12 +38,6 @@ function createAppToken(user: { _id: unknown; username: string; name: string }):
     JWT_SECRET,
     { expiresIn: '7d' }
   );
-}
-
-function usernameBaseFromEmail(email: string): string {
-  const localPart = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_');
-  const base = localPart.replace(/^_+|_+$/g, '').slice(0, 24);
-  return base.length >= 3 ? base : `google_${base}`;
 }
 
 async function getAvailableUsername(email: string): Promise<string> {
@@ -56,22 +57,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
 
-  const { idToken } = (req.body || {}) as GoogleLoginRequest;
-  if (!idToken || typeof idToken !== 'string') {
+  const body = (req.body || {}) as GoogleLoginRequest;
+  const rawToken = body.idToken || body.id_token || body.credential;
+
+  if (!rawToken || typeof rawToken !== 'string' || !rawToken.trim()) {
     return res.status(400).json({ message: 'Google ID token harus diisi' });
   }
-  if (!GOOGLE_CLIENT_ID) {
-    console.error('GOOGLE_CLIENT_ID belum dikonfigurasi');
-    return res.status(500).json({ message: 'Google login belum dikonfigurasi' });
+
+  const allowedClientIds = getAllowedGoogleClientIds();
+  if (allowedClientIds.length === 0) {
+    console.error('GOOGLE_CLIENT_ID belum dikonfigurasi di environment server');
+    return res.status(500).json({ message: 'Google login belum dikonfigurasi di server' });
   }
 
   let payload: TokenPayload | undefined;
   try {
-    const ticket = await googleClient.verifyIdToken({ idToken, audience: GOOGLE_CLIENT_ID });
+    const ticket = await googleClient.verifyIdToken({
+      idToken: rawToken.trim(),
+      audience: allowedClientIds,
+    });
     payload = ticket.getPayload();
   } catch (error: unknown) {
     console.error('Google token verification error:', error);
-    return res.status(401).json({ message: 'Token Google tidak valid' });
+    return res.status(401).json({ message: 'Token Google tidak valid atau kedaluwarsa' });
   }
 
   if (!payload?.sub || !payload.email || payload.email_verified !== true) {
@@ -80,15 +88,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   try {
     await mongoConnect();
-    let user = await User.findOne({ googleId: payload.sub });
+    const normalizedEmail = payload.email.toLowerCase().trim();
+
+    let user = await User.findOne({
+      $or: [{ googleId: payload.sub }, { email: normalizedEmail }],
+    });
+
     if (!user) {
-      const username = await getAvailableUsername(payload.email);
+      const username = await getAvailableUsername(normalizedEmail);
       user = await User.create({
-        name: payload.name?.trim() || payload.email.split('@')[0],
+        name: payload.name?.trim() || normalizedEmail.split('@')[0],
         username,
-        email: payload.email.toLowerCase(),
+        email: normalizedEmail,
         googleId: payload.sub,
       });
+    } else {
+      let shouldSave = false;
+      if (!user.googleId) {
+        user.googleId = payload.sub;
+        shouldSave = true;
+      }
+      if (!user.email) {
+        user.email = normalizedEmail;
+        shouldSave = true;
+      }
+      if (shouldSave) {
+        await user.save();
+      }
     }
 
     return res.status(200).json({
