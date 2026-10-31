@@ -4,7 +4,7 @@ import mongoConnect from "@/lib/mongoConnect";
 import { AuthError, getAuthenticatedUserId } from "@/lib/auth";
 import { buildDeviceConfigPayload } from "@/lib/deviceConfig";
 import { ConfigValidationError } from "@/lib/waterControl";
-import { getDeviceStatus, publishMqtt } from "@/lib/mqttClient";
+import { ensureMqttConnected, getDeviceStatus, publishMqtt } from "@/lib/mqttClient";
 import verifyCors, { cors } from "@/middleware/verifyCors";
 import { Pool } from "@/models/Pool";
 
@@ -34,6 +34,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const payload = buildDeviceConfigPayload(pool);
     const topic = `devices/${pool.serial}/command`;
+    await ensureMqttConnected(2500).catch(() => undefined);
     await publishMqtt(topic, payload);
 
     // Jika status terakhir dari perangkat menunjukkan Firmware v1 (memiliki jarakDasar tanpa configReady),

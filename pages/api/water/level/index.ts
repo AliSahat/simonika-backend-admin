@@ -2,7 +2,11 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import mongoose from "mongoose";
 import mongoConnect from "@/lib/mongoConnect";
 import { AuthError, getAuthenticatedUserId } from "@/lib/auth";
-import { connectMqtt, getDeviceStatus, getMqttConnectionStatus } from "@/lib/mqttClient";
+import {
+  ensureMqttConnected,
+  getDeviceStatus,
+  getMqttConnectionStatus,
+} from "@/lib/mqttClient";
 import { ConfigValidationError, normalizeSerial } from "@/lib/waterControl";
 import verifyCors, { cors } from "@/middleware/verifyCors";
 import { Pool } from "@/models/Pool";
@@ -22,7 +26,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Pastikan subscriber MQTT selalu aktif saat FE/Mobile melakukan polling data level air
   try {
-    connectMqtt();
+    if (!getMqttConnectionStatus()) {
+      await ensureMqttConnected(1500);
+    }
   } catch (error) {
     console.error("MQTT auto-connect warning:", error instanceof Error ? error.message : error);
   }
