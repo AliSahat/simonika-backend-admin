@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import mongoConnect from "@/lib/mongoConnect";
 import { AuthError, getAuthenticatedUserId } from "@/lib/auth";
-import { connectMqtt } from "@/lib/mqttClient";
+import { connectMqtt, publishDeviceConfig } from "@/lib/mqttClient";
 import { ConfigValidationError, validatePoolConfig } from "@/lib/waterControl";
 import verifyCors, { cors } from "@/middleware/verifyCors";
 import { Pool } from "@/models/Pool";
@@ -29,7 +29,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const input = validatePoolConfig((req.body ?? {}) as Record<string, unknown>);
       if (await Pool.exists({ serial: input.serial })) return res.status(409).json({ success: false, message: "Serial perangkat sudah terdaftar" });
       const pool = await Pool.create({ userId, ...input });
-      return res.status(201).json({ success: true, data: pool });
+      let mqttPublished = false;
+      if (pool.isActive) {
+        try {
+          await publishDeviceConfig(pool);
+          mqttPublished = true;
+        } catch (mqttErr) {
+          console.error("Auto-publish MQTT on pool create warning:", mqttErr instanceof Error ? mqttErr.message : mqttErr);
+        }
+      }
+      return res.status(201).json({ success: true, mqttPublished, data: pool });
     }
     return res.status(405).json({ success: false, message: "Metode tidak diizinkan" });
   } catch (error) {

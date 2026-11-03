@@ -2,9 +2,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import mongoose from "mongoose";
 import mongoConnect from "@/lib/mongoConnect";
 import { AuthError, getAuthenticatedUserId } from "@/lib/auth";
-import { buildDeviceConfigPayload } from "@/lib/deviceConfig";
 import { ConfigValidationError } from "@/lib/waterControl";
-import { ensureMqttConnected, getDeviceStatus, publishMqtt } from "@/lib/mqttClient";
+import { publishDeviceConfig } from "@/lib/mqttClient";
 import verifyCors, { cors } from "@/middleware/verifyCors";
 import { Pool } from "@/models/Pool";
 
@@ -32,37 +31,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!pool) return res.status(404).json({ success: false, message: "Data wadah tidak ditemukan" });
     if (!pool.isActive) return res.status(400).json({ success: false, message: "Wadah nonaktif tidak dapat menerima konfigurasi" });
 
-    const payload = buildDeviceConfigPayload(pool);
-    const topic = `devices/${pool.serial}/command`;
-    await ensureMqttConnected(2500).catch(() => undefined);
-    await publishMqtt(topic, payload);
-
-    // Jika status terakhir dari perangkat menunjukkan Firmware v1 (memiliki jarakDasar tanpa configReady),
-    // kirim juga perintah dalam format Firmware v1 agar perangkat v1 dapat menerima pembaruan konfigurasi.
-    const status = getDeviceStatus(pool.serial);
-    if (status && "jarakDasar" in status && !("configReady" in status) && pool.kedalaman > 0) {
-      const jarakDasar = Math.max(5, Math.min(400, Math.round(pool.jarakSensorDasar * 10) / 10));
-      const batasBawah = Math.max(0, Math.min(95, Math.round((pool.batasIsiMulai / pool.kedalaman) * 1000) / 10));
-      const batasAtas = Math.max(batasBawah + 5, Math.min(100, Math.round((pool.batasBuangMulai / pool.kedalaman) * 1000) / 10));
-      const rawHyst = Math.round(((pool.batasIsiBerhenti - pool.batasIsiMulai) / pool.kedalaman) * 1000) / 10;
-      const maxHyst = Math.max(0, Math.floor(((batasAtas - batasBawah - 0.2) / 2) * 10) / 10);
-      const hysteresis = Math.max(0, Math.min(10, maxHyst, rawHyst));
-      await publishMqtt(topic, {
-        serial: pool.serial,
-        modeAuto: pool.modeAuto,
-        isActive: pool.isActive,
-        jarakDasar,
-        batasBawah,
-        batasAtas,
-        hysteresis,
-      }).catch(() => undefined);
-    }
+    const { topic, simonikaTopic, payload, simonikaPayload } = await publishDeviceConfig(pool);
 
     return res.status(200).json({
       success: true,
-      message: "Konfigurasi berhasil dipublish ke broker; penerapan oleh perangkat belum terkonfirmasi",
+      message: "Konfigurasi berhasil dipublish ke broker MQTT (retain: true, QoS: 1)",
       topic,
+      simonikaTopic,
       data: payload,
+      configPayload: simonikaPayload,
     });
   } catch (error) {
     if (error instanceof ConfigValidationError) {

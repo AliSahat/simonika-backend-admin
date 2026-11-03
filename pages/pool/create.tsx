@@ -21,10 +21,10 @@ const initialForm = {
 type FieldName = keyof typeof initialForm;
 
 const thresholdFields = [
-  { name: 'batasIsiMulai' as const, label: 'Mulai isi', hint: 'Batas bawah mulai mengisi', tone: 'blue' },
+  { name: 'batasIsiMulai' as const, label: 'Mulai isi', hint: 'Batas bawah mulai mengisi (> 0)', tone: 'blue' },
   { name: 'batasBuangBerhenti' as const, label: 'Berhenti buang', hint: 'Harus > mulai isi', tone: 'slate' },
   { name: 'batasIsiBerhenti' as const, label: 'Berhenti isi', hint: 'Harus > berhenti buang', tone: 'green' },
-  { name: 'batasBuangMulai' as const, label: 'Mulai buang', hint: 'Harus > berhenti isi & ≤ kedalaman', tone: 'slate' },
+  { name: 'batasBuangMulai' as const, label: 'Mulai buang', hint: 'Harus > berhenti isi & < kedalaman', tone: 'slate' },
 ];
 
 export default function CreatePoolPage() {
@@ -40,8 +40,7 @@ export default function CreatePoolPage() {
     if (name !== 'serial' && name !== 'namaWadah') {
       const num = Number(form[name]);
       if (!Number.isFinite(num)) return 'Masukkan angka yang valid.';
-      if ((name === 'kedalaman' || name === 'jarakSensorDasar') && num <= 0) return 'Masukkan angka lebih dari 0.';
-      if (num < 0) return 'Tidak boleh negatif.';
+      if (num <= 0) return 'Masukkan angka lebih dari 0.';
     }
     return '';
   };

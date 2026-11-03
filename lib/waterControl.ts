@@ -17,6 +17,21 @@ export interface WaterControlConfig {
   batasBuangBerhenti: number;
 }
 
+export interface ContainerThresholdInput {
+  max_depth?: unknown;
+  sensor_to_bottom?: unknown;
+  fill_start?: unknown;
+  fill_stop?: unknown;
+  drain_start?: unknown;
+  drain_stop?: unknown;
+  kedalaman?: unknown;
+  jarakSensorDasar?: unknown;
+  batasIsiMulai?: unknown;
+  batasIsiBerhenti?: unknown;
+  batasBuangMulai?: unknown;
+  batasBuangBerhenti?: unknown;
+}
+
 export interface PoolConfigInput extends WaterControlConfig {
   serial: string;
   namaWadah: string;
@@ -27,17 +42,17 @@ export interface PoolConfigInput extends WaterControlConfig {
 export class ConfigValidationError extends Error {}
 
 const numericLabels: Record<keyof WaterControlConfig, string> = {
-  kedalaman: "Kedalaman",
-  jarakSensorDasar: "Jarak sensor ke dasar",
-  batasIsiMulai: "Batas isi mulai",
-  batasIsiBerhenti: "Batas isi berhenti",
-  batasBuangMulai: "Batas buang mulai",
-  batasBuangBerhenti: "Batas buang berhenti",
+  kedalaman: "Kedalaman wadah (max_depth)",
+  jarakSensorDasar: "Jarak sensor ke dasar (sensor_to_bottom)",
+  batasIsiMulai: "Batas isi mulai (fill_start)",
+  batasIsiBerhenti: "Batas isi berhenti (fill_stop)",
+  batasBuangMulai: "Batas buang mulai (drain_start)",
+  batasBuangBerhenti: "Batas buang berhenti (drain_stop)",
 };
 
 export function normalizeSerial(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) {
-    throw new ConfigValidationError("Serial perangkat wajib diisi");
+    throw new ConfigValidationError("Serial / device_id perangkat wajib diisi");
   }
   const serial = value.trim().toLowerCase();
   if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(serial)) {
@@ -48,51 +63,95 @@ export function normalizeSerial(value: unknown): string {
   return serial;
 }
 
+/**
+ * Menormalisasi input konfigurasi baik dari format snake_case
+ * (max_depth, fill_start, fill_stop, drain_start, drain_stop, sensor_to_bottom)
+ * maupun format existing (kedalaman, batasIsiMulai, dst).
+ */
+export function mapThresholdInputToWaterControl(
+  raw: Record<string, unknown>,
+  fallbackSensorToBottom?: number,
+): Record<keyof WaterControlConfig, unknown> {
+  const kedalaman = raw.kedalaman !== undefined ? raw.kedalaman : raw.max_depth;
+  const batasIsiMulai = raw.batasIsiMulai !== undefined ? raw.batasIsiMulai : raw.fill_start;
+  const batasIsiBerhenti = raw.batasIsiBerhenti !== undefined ? raw.batasIsiBerhenti : raw.fill_stop;
+  const batasBuangMulai = raw.batasBuangMulai !== undefined ? raw.batasBuangMulai : raw.drain_start;
+  const batasBuangBerhenti = raw.batasBuangBerhenti !== undefined ? raw.batasBuangBerhenti : raw.drain_stop;
+
+  let jarakSensorDasar =
+    raw.jarakSensorDasar !== undefined ? raw.jarakSensorDasar : raw.sensor_to_bottom;
+
+  if (jarakSensorDasar === undefined) {
+    if (typeof fallbackSensorToBottom === "number" && Number.isFinite(fallbackSensorToBottom) && fallbackSensorToBottom > 0) {
+      jarakSensorDasar = fallbackSensorToBottom;
+    } else if (typeof kedalaman === "number" && Number.isFinite(kedalaman) && kedalaman > 0) {
+      jarakSensorDasar = kedalaman + 5;
+    }
+  }
+
+  return {
+    kedalaman,
+    jarakSensorDasar,
+    batasIsiMulai,
+    batasIsiBerhenti,
+    batasBuangMulai,
+    batasBuangBerhenti,
+  };
+}
+
+/**
+ * Validasi ketat hierarki 5 parameter batas air:
+ * Rumus mutlak: 0 < fill_start < drain_stop < fill_stop < drain_start < max_depth
+ */
 export function validateWaterControlConfig(
   value: Record<string, unknown> | WaterControlConfig,
 ): WaterControlConfig {
+  const normalizedInput = mapThresholdInputToWaterControl(value as Record<string, unknown>);
   const config = {} as WaterControlConfig;
 
   for (const field of Object.keys(numericLabels) as (keyof WaterControlConfig)[]) {
-    const current = value[field];
+    const current = normalizedInput[field];
     if (typeof current !== "number" || !Number.isFinite(current)) {
       throw new ConfigValidationError(`${numericLabels[field]} harus berupa angka yang valid`);
     }
-    if (current < 0) {
-      throw new ConfigValidationError(`${numericLabels[field]} tidak boleh negatif`);
+    if (current <= 0) {
+      throw new ConfigValidationError(
+        `${numericLabels[field]} harus berupa angka positif lebih besar dari 0 (diterima: ${current})`,
+      );
     }
     config[field] = current;
   }
 
-  if (config.kedalaman <= 0) {
-    throw new ConfigValidationError("Kedalaman harus lebih besar dari nol");
-  }
-  if (config.jarakSensorDasar <= 0) {
-    throw new ConfigValidationError("Jarak sensor ke dasar harus lebih besar dari nol");
-  }
-
   const thresholds: (keyof WaterControlConfig)[] = [
     "batasIsiMulai",
+    "batasBuangBerhenti",
     "batasIsiBerhenti",
     "batasBuangMulai",
-    "batasBuangBerhenti",
   ];
   for (const field of thresholds) {
-    if (config[field] > config.kedalaman) {
+    if (config[field] >= config.kedalaman) {
       throw new ConfigValidationError(
-        `${numericLabels[field]} tidak boleh melebihi kedalaman wadah`,
+        `Urutan ambang level air tidak valid: ${numericLabels[field]} (${config[field]} cm) tidak boleh melebihi atau sama dengan kedalaman wadah / max_depth (${config.kedalaman} cm). Rumus wajib: 0 < fill_start < drain_stop < fill_stop < drain_start < max_depth`,
       );
     }
   }
 
-  if (
-    !(
-      config.batasIsiMulai < config.batasBuangBerhenti &&
-      config.batasBuangBerhenti < config.batasIsiBerhenti &&
-      config.batasIsiBerhenti < config.batasBuangMulai
-    )
-  ) {
-    throw new ConfigValidationError("Urutan ambang level air tidak valid");
+  if (config.batasIsiMulai >= config.batasBuangBerhenti) {
+    throw new ConfigValidationError(
+      `Urutan ambang level air tidak valid: fill_start (${config.batasIsiMulai} cm) harus lebih kecil dari drain_stop (${config.batasBuangBerhenti} cm). Rumus wajib: 0 < fill_start < drain_stop < fill_stop < drain_start < max_depth`,
+    );
+  }
+
+  if (config.batasBuangBerhenti >= config.batasIsiBerhenti) {
+    throw new ConfigValidationError(
+      `Urutan ambang level air tidak valid: drain_stop (${config.batasBuangBerhenti} cm) harus lebih kecil dari fill_stop (${config.batasIsiBerhenti} cm). Rumus wajib: 0 < fill_start < drain_stop < fill_stop < drain_start < max_depth`,
+    );
+  }
+
+  if (config.batasIsiBerhenti >= config.batasBuangMulai) {
+    throw new ConfigValidationError(
+      `Urutan ambang level air tidak valid: fill_stop (${config.batasIsiBerhenti} cm) harus lebih kecil dari drain_start (${config.batasBuangMulai} cm). Rumus wajib: 0 < fill_start < drain_stop < fill_stop < drain_start < max_depth`,
+    );
   }
 
   return config;
@@ -165,12 +224,13 @@ export function parseTelemetryPayload(
   message: Buffer | string,
   cachedStatus?: Record<string, unknown>,
 ): ParsedTelemetry | null {
-  const match = /^devices\/([^/]+)\/data$/.exec(topic);
+  const match = /^(?:devices\/([^/]+)\/data|simonika\/([^/]+)\/telemetry)$/.exec(topic);
   if (!match) return null;
-  const topicSerial = normalizeSerial(match[1]);
+  const topicSerial = normalizeSerial(match[1] ?? match[2]);
   const payload = JSON.parse(typeof message === "string" ? message : message.toString()) as Record<string, unknown>;
 
-  if (payload.serial !== undefined && normalizeSerial(payload.serial) !== topicSerial) {
+  const rawSerial = payload.serial !== undefined ? payload.serial : payload.device_id;
+  if (rawSerial !== undefined && normalizeSerial(rawSerial) !== topicSerial) {
     throw new Error("Serial payload telemetry tidak sesuai dengan topic");
   }
 
@@ -182,30 +242,44 @@ export function parseTelemetryPayload(
     throw new Error("Payload telemetry tidak valid atau tidak lengkap");
   }
 
-  const hasV2Fields =
-    typeof payload.sensorValid === "boolean" ||
-    typeof payload.fillValveOpen === "boolean" ||
-    typeof payload.drainValveOpen === "boolean" ||
-    payload.controlState !== undefined;
+  const rawWaterLevel = payload.waterLevel !== undefined ? payload.waterLevel : payload.water_level;
+  const rawDistance = payload.distance !== undefined ? payload.distance : payload.sensor_distance;
+  const rawSensorValid =
+    payload.sensorValid !== undefined
+      ? payload.sensorValid
+      : payload.sensor_valid !== undefined
+        ? payload.sensor_valid
+        : payload.inlet_valve !== undefined || payload.outlet_valve !== undefined || payload.system_state !== undefined
+          ? true
+          : undefined;
+  const rawFillValve = payload.fillValveOpen !== undefined ? payload.fillValveOpen : payload.inlet_valve;
+  const rawDrainValve = payload.drainValveOpen !== undefined ? payload.drainValveOpen : payload.outlet_valve;
+  const rawControlState = payload.controlState !== undefined ? payload.controlState : payload.system_state;
 
-  const waterLevel = toOptionalFiniteNumber(payload.waterLevel);
-  const distance = toOptionalFiniteNumber(payload.distance);
+  const hasV2Fields =
+    typeof rawSensorValid === "boolean" ||
+    typeof rawFillValve === "boolean" ||
+    typeof rawDrainValve === "boolean" ||
+    rawControlState !== undefined;
+
+  const waterLevel = toOptionalFiniteNumber(rawWaterLevel);
+  const distance = toOptionalFiniteNumber(rawDistance);
 
   if (hasV2Fields) {
     if (
-      typeof payload.sensorValid !== "boolean" ||
-      typeof payload.fillValveOpen !== "boolean" ||
-      typeof payload.drainValveOpen !== "boolean" ||
-      !isWaterControlState(payload.controlState)
+      typeof rawSensorValid !== "boolean" ||
+      typeof rawFillValve !== "boolean" ||
+      typeof rawDrainValve !== "boolean" ||
+      !isWaterControlState(rawControlState)
     ) {
       throw new Error("Payload telemetry tidak valid atau tidak lengkap");
     }
-    if (payload.sensorValid && (waterLevel === undefined || distance === undefined)) {
+    if (rawSensorValid && (waterLevel === undefined || distance === undefined)) {
       throw new Error("waterLevel dan distance telemetry harus berupa angka finite saat sensorValid=true");
     }
     if (
-      (payload.waterLevel !== null && payload.waterLevel !== undefined && waterLevel === undefined) ||
-      (payload.distance !== null && payload.distance !== undefined && distance === undefined)
+      (rawWaterLevel !== null && rawWaterLevel !== undefined && waterLevel === undefined) ||
+      (rawDistance !== null && rawDistance !== undefined && distance === undefined)
     ) {
       throw new Error("waterLevel dan distance telemetry harus berupa angka finite atau null");
     }
@@ -217,10 +291,10 @@ export function parseTelemetryPayload(
       timestamp: toOptionalFiniteNumber(payload.timestamp),
       uptimeMs: toOptionalFiniteNumber(payload.uptimeMs),
       sequence: toOptionalFiniteNumber(payload.sequence),
-      sensorValid: payload.sensorValid,
-      fillValveOpen: payload.fillValveOpen,
-      drainValveOpen: payload.drainValveOpen,
-      controlState: payload.controlState,
+      sensorValid: rawSensorValid,
+      fillValveOpen: rawFillValve,
+      drainValveOpen: rawDrainValve,
+      controlState: rawControlState,
     };
   }
 
@@ -260,7 +334,7 @@ export function parseTelemetryPayload(
     fillValveOpen,
     drainValveOpen,
     controlState: deriveControlState(
-      payload.controlState,
+      rawControlState,
       sensorValid,
       fillValveOpen,
       drainValveOpen,
@@ -268,4 +342,38 @@ export function parseTelemetryPayload(
       runLimitFault,
     ),
   };
+}
+
+export interface TelemetryThrottleSnapshot {
+  savedAtMs: number;
+  controlState: WaterControlState;
+  fillValveOpen: boolean;
+  drainValveOpen: boolean;
+  sensorValid: boolean;
+}
+
+export const DEFAULT_TELEMETRY_THROTTLE_MS = 15_000;
+
+/**
+ * Menentukan apakah data telemetry perlu disimpan ke database:
+ * - Simpan langsung jika belum pernah disimpan
+ * - Simpan langsung jika terjadi perubahan state machine atau status kran/sensor (IDLE <-> FILLING <-> DRAINING <-> FAULT)
+ * - Simpan jika sudah melewati interval throttling (default 15 detik)
+ */
+export function shouldPersistTelemetry(
+  previous: TelemetryThrottleSnapshot | undefined,
+  current: Pick<ParsedTelemetry, "controlState" | "fillValveOpen" | "drainValveOpen" | "sensorValid">,
+  nowMs: number,
+  intervalMs: number = DEFAULT_TELEMETRY_THROTTLE_MS,
+): boolean {
+  if (!previous) return true;
+  if (
+    previous.controlState !== current.controlState ||
+    previous.fillValveOpen !== current.fillValveOpen ||
+    previous.drainValveOpen !== current.drainValveOpen ||
+    previous.sensorValid !== current.sensorValid
+  ) {
+    return true;
+  }
+  return nowMs - previous.savedAtMs >= intervalMs;
 }

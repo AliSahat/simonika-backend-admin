@@ -2,8 +2,12 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import mongoose from "mongoose";
 import mongoConnect from "@/lib/mongoConnect";
 import { AuthError, getAuthenticatedUserId } from "@/lib/auth";
-import { connectMqtt } from "@/lib/mqttClient";
-import { ConfigValidationError, validatePoolConfig } from "@/lib/waterControl";
+import { connectMqtt, publishDeviceConfig } from "@/lib/mqttClient";
+import {
+  ConfigValidationError,
+  mapThresholdInputToWaterControl,
+  validatePoolConfig,
+} from "@/lib/waterControl";
 import verifyCors, { cors } from "@/middleware/verifyCors";
 import { Pool } from "@/models/Pool";
 
@@ -41,12 +45,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!existing) return res.status(404).json({ success: false, message: "Data tidak ditemukan" });
       const merged = existing.toObject() as unknown as Record<string, unknown>;
       const body = (req.body ?? {}) as Record<string, unknown>;
+      const mappedThresholds = mapThresholdInputToWaterControl(body, existing.jarakSensorDasar);
+      for (const [key, val] of Object.entries(mappedThresholds)) {
+        if (val !== undefined) merged[key] = val;
+      }
       for (const field of editableFields) if (body[field] !== undefined) merged[field] = body[field];
       const input = validatePoolConfig(merged);
       if (await Pool.exists({ serial: input.serial, _id: { $ne: id } })) return res.status(409).json({ success: false, message: "Serial perangkat sudah terdaftar" });
       const updatedPool = await Pool.findOneAndUpdate({ _id: id, userId }, { $set: input }, { new: true, runValidators: true });
       if (!updatedPool) return res.status(404).json({ success: false, message: "Data tidak ditemukan" });
-      return res.status(200).json({ success: true, data: updatedPool });
+
+      let mqttPublished = false;
+      if (updatedPool.isActive) {
+        try {
+          await publishDeviceConfig(updatedPool);
+          mqttPublished = true;
+        } catch (mqttErr) {
+          console.error("Auto-publish MQTT on pool update warning:", mqttErr instanceof Error ? mqttErr.message : mqttErr);
+        }
+      }
+      return res.status(200).json({ success: true, mqttPublished, data: updatedPool });
     }
     return res.status(405).json({ success: false, message: "Metode tidak diizinkan" });
   } catch (error) {
