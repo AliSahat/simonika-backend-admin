@@ -114,10 +114,27 @@ const LoginPage: React.FC = () => {
       setUsername(savedUsername);
       setRememberUsername(true);
     }
-    // Check if user is already logged in
+    // Check if user is already logged in with a valid token
     const token = localStorage.getItem("token");
     if (token) {
-      router.push("/pool/read");
+      const controller = new AbortController();
+      fetch("/api/auth/profile", {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      })
+        .then((res) => {
+          if (res.ok) {
+            void router.replace("/pool/read");
+          } else if (res.status === 401 || res.status === 404) {
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+          }
+        })
+        .catch(() => {
+          // Aborted or network error — stay on login page
+        });
+      setupGoogleButton();
+      return () => controller.abort();
     }
     setupGoogleButton();
   }, [router, isGoogleConfigured]);
@@ -179,12 +196,25 @@ const LoginPage: React.FC = () => {
     <main className="login-page">
       <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" onLoad={setupGoogleButton} />
       <div className="login-scenery" aria-hidden="true" />
+      <div className="bento-ambient-layer" aria-hidden="true">
+        <span className="bento-orb bento-orb-amber" />
+        <span className="bento-orb bento-orb-blue" />
+        <span className="bento-orb bento-orb-emerald" />
+        <span className="bento-orb bento-orb-cyan" />
+      </div>
       <div className="login-orbit login-orbit-left" aria-hidden="true" />
       <div className="login-orbit login-orbit-right" aria-hidden="true" />
-      <div className="login-floating login-floating-water" aria-hidden="true"><Droplet size={30} /></div>
-      <div className="login-floating login-floating-chart" aria-hidden="true"><ChartNoAxesColumnIncreasing size={30} /></div>
+      <div className="login-floating login-floating-water" aria-hidden="true"><Droplet size={28} /></div>
+      <div className="login-floating login-floating-chart" aria-hidden="true"><ChartNoAxesColumnIncreasing size={28} /></div>
       <div className="login-shell">
-        <div className="login-brand"><span className="login-brand-icon"><Waves aria-hidden="true" size={36} /></span><span>SIMONIKA</span></div>
+        <div className="login-brand">
+          <span className="login-brand-icon"><Waves aria-hidden="true" size={24} /></span>
+          <div className="login-brand-text">
+            <span>SIMONIKA</span>
+            <small>Smart Water IoT</small>
+          </div>
+          <span className="login-live-pill"><span className="login-live-dot" /> Live</span>
+        </div>
         <section className="login-card" aria-labelledby="login-title">
           <header className="login-heading">
             <span className="login-eyebrow">SELAMAT DATANG KEMBALI</span>

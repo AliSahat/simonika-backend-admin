@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import axios from 'axios';
@@ -35,6 +35,12 @@ export default function CreatePoolPage() {
   const [error, setError] = useState('');
   const [touched, setTouched] = useState<Partial<Record<FieldName, boolean>>>({});
 
+  useEffect(() => {
+    if (!localStorage.getItem('token')) {
+      void router.replace('/');
+    }
+  }, [router]);
+
   const fieldError = (name: FieldName) => {
     if (!form[name].trim()) return 'Bagian ini wajib diisi.';
     if (name !== 'serial' && name !== 'namaWadah') {
@@ -58,6 +64,10 @@ export default function CreatePoolPage() {
     setError('');
     try {
       const token = localStorage.getItem('token');
+      if (!token) {
+        await router.replace('/');
+        return;
+      }
       const res = await axios.post('/api/pool', {
         serial: form.serial.trim(),
         namaWadah: form.namaWadah.trim(),
@@ -75,6 +85,12 @@ export default function CreatePoolPage() {
       }
       await router.push('/pool/read');
     } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        await router.replace('/');
+        return;
+      }
       setError(axios.isAxiosError(err) && typeof err.response?.data?.message === 'string' ? err.response.data.message : 'Wadah belum berhasil disimpan. Periksa koneksi Anda dan coba lagi.');
     } finally { setLoading(false); }
   };

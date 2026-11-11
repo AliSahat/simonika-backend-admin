@@ -1,0 +1,89 @@
+// DBML Schema generated from Mongoose Models (./models)
+// Project: SIMONIKA MQTT Backend API Service
+
+Project simonika_mqtt_backend {
+  database_type: 'MongoDB'
+  Note: 'Skema database Mongoose untuk layanan backend SIMONIKA (User, Pool, WaterLevel)'
+}
+
+Enum WaterControlState {
+  IDLE
+  FILLING
+  DRAINING
+  MANUAL
+  FAULT
+}
+
+Table User {
+  _id ObjectId [pk, not null, note: 'Primary Key bawaan MongoDB']
+  name varchar [not null, note: 'required: true, trim: true, minlength: 2']
+  username varchar [not null, unique, note: 'required: true, unique: true, trim: true, minlength: 3']
+  password varchar [null, note: 'required: false, minlength: 6, select: false, di-hash menggunakan bcrypt (SALT_ROUNDS = 10)']
+  email varchar [null, unique, note: 'trim: true, lowercase: true, sparse: true, unique: true']
+  googleId varchar [null, unique, note: 'trim: true, sparse: true, unique: true, index: true']
+  createdAt timestamp [not null, default: `now()`, note: 'Otomatis dari timestamps: true']
+  updatedAt timestamp [not null, default: `now()`, note: 'Otomatis dari timestamps: true']
+
+  indexes {
+    username [unique]
+    email [unique, note: 'sparse: true']
+    googleId [unique, note: 'sparse: true, index: true']
+  }
+
+  Note: 'Model: User (collection: users) - Menyimpan data akun pengguna dan kredensial autentikasi'
+}
+
+Table Pool {
+  _id ObjectId [pk, not null, note: 'Primary Key bawaan MongoDB']
+  userId ObjectId [not null, note: 'ref: User, required: true']
+  serial varchar [not null, unique, note: 'required: true, trim: true, lowercase: true, identitas unik perangkat']
+  namaWadah varchar [not null, note: 'required: true, trim: true']
+  kedalaman number [not null, note: 'required: true (max_depth)']
+  jarakSensorDasar number [not null, note: 'required: true (sensor_to_bottom)']
+  batasIsiMulai number [not null, note: 'required: true (fill_start)']
+  batasIsiBerhenti number [not null, note: 'required: true (fill_stop)']
+  batasBuangMulai number [not null, note: 'required: true (drain_start)']
+  batasBuangBerhenti number [not null, note: 'required: true (drain_stop)']
+  modeAuto boolean [not null, default: true, note: 'required: true, default: true']
+  isActive boolean [null, default: true, note: 'required: false, default: true']
+  createdAt timestamp [not null, default: `now()`, note: 'Otomatis dari timestamps: true']
+  updatedAt timestamp [not null, default: `now()`, note: 'Otomatis dari timestamps: true']
+
+  indexes {
+    serial [unique, name: 'unique_device_serial', note: 'PoolSchema.index({ serial: 1 }, { unique: true, name: "unique_device_serial" })']
+  }
+
+  Note: 'Model: Pool (collection: pools) - Menyimpan konfigurasi wadah/kolam air dan parameter ambang batas sensor per perangkat'
+}
+
+Table WaterLevel {
+  _id ObjectId [pk, not null, note: 'Primary Key bawaan MongoDB']
+  serial varchar [not null, note: 'required: true, index: true, merujuk secara logis ke Pool.serial']
+  poolId ObjectId [not null, note: 'ref: Pool, required: true, index: true']
+  userId ObjectId [not null, note: 'ref: User, required: true, index: true']
+  waterLevel number [null, note: 'required: false, ketinggian air terukur']
+  distance number [null, note: 'required: false, jarak bacaan sensor']
+  timestamp number [null, note: 'required: false, epoch timestamp dari perangkat']
+  uptimeMs number [null, note: 'required: false, durasi nyala perangkat dalam milidetik']
+  sequence number [null, note: 'required: false, nomor urut paket telemetri']
+  sensorValid boolean [not null, note: 'required: true']
+  fillValveOpen boolean [not null, note: 'required: true, status katup pengisian (inlet)']
+  drainValveOpen boolean [not null, note: 'required: true, status katup pembuangan (outlet)']
+  controlState WaterControlState [not null, note: 'required: true, enum: IDLE | FILLING | DRAINING | MANUAL | FAULT']
+  createdAt timestamp [not null, default: `now()`, note: 'Otomatis dari timestamps: true']
+  updatedAt timestamp [not null, default: `now()`, note: 'Otomatis dari timestamps: true']
+
+  indexes {
+    serial [note: 'index: true']
+    poolId [note: 'index: true']
+    userId [note: 'index: true']
+    (poolId, createdAt) [note: 'Compound index: WaterLevelSchema.index({ poolId: 1, createdAt: -1 })']
+  }
+
+  Note: 'Model: WaterLevel (collection: waterlevels) - Menyimpan riwayat data telemetri ketinggian air dan status katup dari perangkat MQTT'
+}
+
+// Relasi Antar-Model (Mongoose ObjectId References)
+Ref user_pools: Pool.userId > User._id
+Ref pool_water_levels: WaterLevel.poolId > Pool._id
+Ref user_water_levels: WaterLevel.userId > User._id

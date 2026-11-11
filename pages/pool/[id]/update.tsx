@@ -47,6 +47,10 @@ export default function UpdatePoolPage() {
     const load = async () => {
       try {
         const token = localStorage.getItem('token');
+        if (!token) {
+          await router.replace('/');
+          return;
+        }
         const response = await axios.get(`/api/pool/${id}`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
         const data = response.data.data;
         const loadedForm = {
@@ -68,6 +72,12 @@ export default function UpdatePoolPage() {
         setError('');
       } catch (err) {
         if (controller.signal.aborted) return;
+        if (axios.isAxiosError(err) && err.response?.status === 401) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          await router.replace('/');
+          return;
+        }
         setLoadError(axios.isAxiosError(err) && typeof err.response?.data?.message === 'string' ? err.response.data.message : 'Data wadah belum berhasil dimuat. Periksa koneksi Anda dan coba lagi.');
       } finally { if (!controller.signal.aborted) setFetching(false); }
     };

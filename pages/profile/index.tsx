@@ -27,13 +27,24 @@ export default function ProfilePage() {
     const load = async () => {
       try {
         const token = localStorage.getItem('token');
-        if (!token) throw new Error('Silakan masuk kembali untuk melihat informasi akun Anda.');
+        if (!token) {
+          await router.replace('/');
+          return;
+        }
         const response = await axios.get('/api/auth/profile', { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
         const user = response.data.data?.user || response.data.user;
         if (!user) throw new Error('Informasi profil belum tersedia. Silakan coba lagi.');
         setProfile(user);
       } catch (err) {
-        if (!controller.signal.aborted) setError(axios.isAxiosError(err) && typeof err.response?.data?.message === 'string' ? err.response.data.message : err instanceof Error ? err.message : 'Profil belum berhasil dimuat. Silakan coba lagi.');
+        if (!controller.signal.aborted) {
+          if (axios.isAxiosError(err) && err.response?.status === 401) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            await router.replace('/');
+            return;
+          }
+          setError(axios.isAxiosError(err) && typeof err.response?.data?.message === 'string' ? err.response.data.message : err instanceof Error ? err.message : 'Profil belum berhasil dimuat. Silakan coba lagi.');
+        }
       } finally { if (!controller.signal.aborted) setLoading(false); }
     };
     void load();
